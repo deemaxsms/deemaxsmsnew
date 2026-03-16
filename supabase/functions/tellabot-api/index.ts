@@ -20,10 +20,9 @@ serve(async (req: Request) => {
     
     console.log('Tell-A-Bot API Request:', { cmd, params })
     
-    // Build query parameters - use correct parameter names
     const queryParams = new URLSearchParams({
       cmd,
-      user: USERNAME,  // Tell-A-Bot uses 'user' not 'username'
+      user: USERNAME,  
       api_key: API_KEY,
       ...Object.fromEntries(
         Object.entries(params).map(([key, value]) => [key, String(value)])

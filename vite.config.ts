@@ -25,7 +25,6 @@ export default defineConfig(({ mode }) => ({
       };
     }
 
-    // NEW: Proxy for Tell A Bot API to bypass CORS
     base.proxy = {
       ...base.proxy,
       "/api/tellabot": {
