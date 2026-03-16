@@ -116,10 +116,8 @@ const Dashboard = () => {
 
       let apiResult;
       if (type === "rental") {
-        // Long-term rental
         apiResult = await smsApi.rentLTR(user.uid, service, days as 3 | 30 || 30);
       } else {
-        // One-time activation (ignore country for SMS services)
         apiResult = await smsApi.requestMDN(user.uid, service);
       }
 
