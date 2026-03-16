@@ -1,5 +1,3 @@
-// Example backend API route (Node.js/Express)
-// This would go in your backend server
 
 app.get('/api/tellabot', async (req, res) => {
   try {
