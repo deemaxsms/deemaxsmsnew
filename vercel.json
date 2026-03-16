@@ -5,12 +5,18 @@
     }
   },
   "functions": {
-    "api/tellabot.js": {
+    "api/*.js": {
       "maxDuration": 30
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/api/tellabot",
+      "destination": "/api/tellabot.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
