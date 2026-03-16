@@ -19,13 +19,11 @@ import { firebaseAuthService } from "@/lib/firebase-auth";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import logo from "@/assets/logo.png";
 
-/* -------------------- Validation -------------------- */
 const loginSchema = z.object({
   identifier: z.string().min(3, "Email or username is required"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
-/* -------------------- Production Check -------------------- */
 const PRODUCTION_DOMAINS = [
   "smsglobe.net",
   "smsglobal.vercel.app",
