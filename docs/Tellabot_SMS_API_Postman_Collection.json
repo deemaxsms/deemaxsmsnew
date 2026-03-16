@@ -1,0 +1,463 @@
+{
+  "info": {
+    "name": "SMS Globe - Tellabot SMS API",
+    "description": "Postman collection for testing Tellabot SMS API endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://www.tellabot.com/sims/api_command.php",
+      "type": "string"
+    },
+    {
+      "key": "user",
+      "value": "muhammed-tech",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "li7N6KjtJBJZa2irO7c8zCdVlYGps9jN",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Balance & Services",
+      "item": [
+        {
+          "name": "Get Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=balance&user={{user}}&api_key={{api_key}}",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "balance"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                }
+              ]
+            },
+            "description": "Check account balance"
+          }
+        },
+        {
+          "name": "List Services",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=list_services&user={{user}}&api_key={{api_key}}",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "list_services"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                }
+              ]
+            },
+            "description": "Get available services with prices and availability"
+          }
+        },
+        {
+          "name": "List Services (Specific)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=list_services&user={{user}}&api_key={{api_key}}&service=Google",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "list_services"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "service",
+                  "value": "Google"
+                }
+              ]
+            },
+            "description": "Get details for a specific service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "One-time MDNs",
+      "item": [
+        {
+          "name": "Request MDN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=request&user={{user}}&api_key={{api_key}}&service=Amazon&state=CA&markup=25",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "request"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "service",
+                  "value": "Amazon"
+                },
+                {
+                  "key": "state",
+                  "value": "CA"
+                },
+                {
+                  "key": "markup",
+                  "value": "25"
+                }
+              ]
+            },
+            "description": "Request a phone number for SMS verification"
+          }
+        },
+        {
+          "name": "Get Request Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=request_status&user={{user}}&api_key={{api_key}}&id=10000001",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "request_status"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "id",
+                  "value": "10000001"
+                }
+              ]
+            },
+            "description": "Check status of a request"
+          }
+        },
+        {
+          "name": "Reject MDN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=reject&user={{user}}&api_key={{api_key}}&id=10000001",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "reject"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "id",
+                  "value": "10000001"
+                }
+              ]
+            },
+            "description": "Reject a reserved MDN"
+          }
+        },
+        {
+          "name": "Read SMS",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=read_sms&user={{user}}&api_key={{api_key}}&service=Google&mdn=12345678901",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "read_sms"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "service",
+                  "value": "Google"
+                },
+                {
+                  "key": "mdn",
+                  "value": "12345678901"
+                }
+              ]
+            },
+            "description": "Get SMS messages for an MDN"
+          }
+        },
+        {
+          "name": "Send SMS (Reply)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=send_sms&user={{user}}&api_key={{api_key}}&mdn=12345678901&to=555&sms=Hello",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "send_sms"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "mdn",
+                  "value": "12345678901"
+                },
+                {
+                  "key": "to",
+                  "value": "555"
+                },
+                {
+                  "key": "sms",
+                  "value": "Hello"
+                }
+              ]
+            },
+            "description": "Reply to an incoming SMS"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Long-term Rentals",
+      "item": [
+        {
+          "name": "Rent MDN (Long-term)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=ltr_rent&user={{user}}&api_key={{api_key}}&service=Amazon&duration=30&state=CA&autorenew=true",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "ltr_rent"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "service",
+                  "value": "Amazon"
+                },
+                {
+                  "key": "duration",
+                  "value": "30"
+                },
+                {
+                  "key": "state",
+                  "value": "CA"
+                },
+                {
+                  "key": "autorenew",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Rent a phone number for extended periods"
+          }
+        },
+        {
+          "name": "Get Long-term Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=ltr_status&user={{user}}&api_key={{api_key}}&mdn=12345678901",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "ltr_status"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "mdn",
+                  "value": "12345678901"
+                }
+              ]
+            },
+            "description": "Check details of a long-term rental"
+          }
+        },
+        {
+          "name": "Set Auto Renew",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=ltr_autorenew&user={{user}}&api_key={{api_key}}&service=Amazon&mdn=12345678901&autorenew=true",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "ltr_autorenew"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "service",
+                  "value": "Amazon"
+                },
+                {
+                  "key": "mdn",
+                  "value": "12345678901"
+                },
+                {
+                  "key": "autorenew",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Toggle auto-renewal for a rental"
+          }
+        },
+        {
+          "name": "Activate Long-term MDN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=ltr_activate&user={{user}}&api_key={{api_key}}&mdn=12345678901",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "ltr_activate"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "mdn",
+                  "value": "12345678901"
+                }
+              ]
+            },
+            "description": "Bring an offline rental back online"
+          }
+        },
+        {
+          "name": "Release Long-term Rental",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}?cmd=ltr_release&user={{user}}&api_key={{api_key}}&id=1",
+              "host": ["{{base_url}}"],
+              "query": [
+                {
+                  "key": "cmd",
+                  "value": "ltr_release"
+                },
+                {
+                  "key": "user",
+                  "value": "{{user}}"
+                },
+                {
+                  "key": "api_key",
+                  "value": "{{api_key}}"
+                },
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "End a long-term rental early"
+          }
+        }
+      ]
+    }
+  ]
+}

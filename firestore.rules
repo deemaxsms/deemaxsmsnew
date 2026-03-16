@@ -1,0 +1,375 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===== HELPER FUNCTIONS =====
+    function isOwner(fieldValue) {
+      return request.auth != null && request.auth.uid == fieldValue;
+    }
+
+    function isAdmin() {
+      return request.auth != null && (
+        // Check if email is in allowed admin emails (primary check)
+        request.auth.token.email in ['muhammednetr@gmail.com', 'olayemimuhammed2020@gmail.com', 'smsglobe01@gmail.com'] ||
+        // Check custom claims for admin status
+        request.auth.token.admin == true ||
+        // Check if user document has admin flag (with existence check)
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)
+      );
+    }
+
+    function incomingData() {
+      return request.resource.data;
+    }
+
+    function existingData() {
+      return resource.data;
+    }
+
+    // ===== SIGNUP HELPER FUNCTIONS =====
+    function isValidUserCreation() {
+      return request.auth != null &&
+             incomingData().email == request.auth.token.email &&
+             incomingData().balance == 0 &&
+             incomingData().cashback == 0 &&
+             incomingData().useCashbackFirst == true &&
+             incomingData().referralCount == 0 &&
+             incomingData().referralEarnings == 0;
+    }
+
+    // ===== ADMIN COLLECTIONS (Full Access) =====
+    match /admin_settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ===== PUBLIC READ-ONLY DATA (from both apps) =====
+    // Username availability checking (public read for signup)
+    match /usernames/{username} {
+      allow read: if true;  // Public read for availability checking
+      allow create: if request.auth != null && incomingData().userId == request.auth.uid; // Allow users to reserve their username
+      allow update, delete: if isAdmin(); // Only admin can modify/delete username reservations
+    }
+
+    // First app (gift-related)
+    match /gift_categories/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /gifts/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /gift_availability/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /shipping_rates/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /shipping_size_fees/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Second app (service/product-related)
+    match /countries/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /services/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /restricted_countries/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /restricted_domains/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /system_restrictions/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /in-app-msg/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /operators/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /product_listings/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Public tracking links (gift app)
+    match /tracking_links/{docId} {
+      allow read: if true;                    // Public for recipients
+      allow create, update: if request.auth != null;
+      allow delete: if isAdmin();
+    }
+
+    // Referrals (public read)
+    match /refers/{referId} {
+      allow read: if true;
+      allow create: if request.auth != null && isOwner(incomingData().userId) && incomingData().commission > 0;
+      allow update, delete: if isAdmin();
+    }
+
+    // Feedbacks (public read)
+    match /feedbacks/{docId} {
+      allow read: if true;
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update, delete: if request.auth != null && (isAdmin() || isOwner(resource.data.userId));
+    }
+
+    // ===== SECURITY AUDITS =====
+    match /security_audits/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ===== USER DATA =====
+    match /users/{userId} {
+      // Allow reading own profile or admin access
+      allow read: if request.auth != null && (isOwner(userId) || isAdmin());
+      
+      // Allow creating user profile during signup (with validation)
+      allow create: if request.auth != null && isOwner(userId) && isValidUserCreation();
+      
+      // Allow updating own profile or admin access
+      allow update: if request.auth != null && (isOwner(userId) || isAdmin());
+      
+      // Only admin can delete
+      allow delete: if isAdmin();
+    }
+
+    match /user_balances/{userId} {
+      allow read, create, update: if request.auth != null && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /user_restrictions/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // ===== GIFT-APP SPECIFIC USER-RELATED COLLECTIONS =====
+    match /saved_addresses/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update, delete: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /custom_gift_requests/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /gift_orders/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.senderId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().senderId);
+      allow update: if request.auth != null && (isOwner(resource.data.senderId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /order_status_history/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && (isAdmin() || isOwner(incomingData().updatedBy));
+      allow update, delete: if isAdmin();
+    }
+
+    // ===== SERVICE-APP ORDERS & PAYMENTS =====
+    match /deposits/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId) && 
+                     incomingData().amount > 0 && incomingData().status == "pending";
+      allow update, delete: if isAdmin();
+    }
+
+    match /payments/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /userDeposits/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId) && 
+                     incomingData().amount > 0 && incomingData().status == "pending";
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin()) && 
+                     (isAdmin() || (existingData().status == "pending" && incomingData().status == "completed"));
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId) && 
+                     incomingData().amount > 0 && incomingData().status == "pending";
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /active_orders/{docId} {
+      allow read, create, update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /product_orders/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /activations/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /sms_orders/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /rentals/{docId} {
+      allow read, write: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+    }
+
+    match /crypto_payments/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId) && incomingData().amount > 0;
+      allow update, delete: if isAdmin();
+    }
+
+    match /crypto_payment_history/{docId} {
+      allow read, update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && (isOwner(incomingData().userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /deposit_history/{docId} {
+      allow read, update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && (isOwner(incomingData().userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ===== BALANCE & TRANSACTIONS (Enhanced Security) =====
+    match /balance_transactions/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && (
+        // Allow admin to create any transaction
+        isAdmin() ||
+        // Allow users to create their own transactions during signup/operations
+        (isOwner(incomingData().userId) && 
+         // Validate transaction data structure
+         incomingData().keys().hasAll(['userId', 'type', 'amount', 'description', 'balanceAfter']) &&
+         // Validate transaction types
+         incomingData().type in ['deposit', 'purchase', 'refund', 'withdrawal', 'referral_bonus'] &&
+         // Validate amount is a number
+         incomingData().amount is number &&
+         // Validate description exists and is not empty
+         incomingData().description is string &&
+         incomingData().description.size() > 0 &&
+         // Validate balanceAfter is non-negative
+         incomingData().balanceAfter >= 0 &&
+         // Prevent correction transactions (security measure)
+         !incomingData().description.matches('.*[Cc]orrection.*'))
+      );
+      allow update: if false; // Transactions should be immutable for audit trail
+      allow delete: if false; // Transactions should never be deleted for audit trail
+    }
+
+    match /transactions/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create, update: if request.auth != null && (isOwner(incomingData().userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ===== CHAT & SUPPORT (service app) =====
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null && (isAdmin() || resource.data.participants.hasAny([request.auth.uid]));
+    }
+
+    match /conversations/{convId} {
+      allow read, write: if request.auth != null && (isAdmin() || isOwner(resource.data.userId));
+    }
+
+    match /conversation/{docId} {
+      allow read, write: if request.auth != null && (isAdmin() || isOwner(resource.data.userId));
+    }
+
+    match /messages/{msgId} {
+      allow read, write: if request.auth != null && (isAdmin() || isOwner(resource.data.senderId));
+    }
+
+    match /inbox/{docId} {
+      allow read, write: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /UserChatSettings/{docId} {
+      allow read, write: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /support_conversations/{convId} {
+      allow read, write: if request.auth != null && (isAdmin() || isOwner(resource.data.userId));
+    }
+
+    match /support_messages/{msgId} {
+      allow read, write: if request.auth != null && (isAdmin() || isOwner(resource.data.senderId));
+    }
+
+    // ===== ADMIN-ONLY COLLECTIONS =====
+    match /service_pricing_logs/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /tempEmails/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin-auth-email/{email} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ===== CATCH-ALL DENY =====
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

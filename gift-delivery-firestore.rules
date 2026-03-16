@@ -1,0 +1,118 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== HELPER FUNCTIONS =====
+    function isOwner(fieldValue) {
+      return request.auth != null && request.auth.uid == fieldValue;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+    
+    function incomingData() {
+      return request.resource.data;
+    }
+    
+    function existingData() {
+      return resource.data;
+    }
+
+    // ===== PUBLIC READ-ONLY DATA =====
+    match /gift_categories/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /gifts/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /gift_availability/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /shipping_rates/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /shipping_size_fees/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ===== USER DATA =====
+    match /users/{userId} {
+      allow read: if request.auth != null && (isOwner(userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(userId);
+      allow update: if request.auth != null && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ===== SAVED ADDRESSES =====
+    match /saved_addresses/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    // ===== CUSTOM GIFT REQUESTS =====
+    match /custom_gift_requests/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().userId);
+      allow update: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ===== GIFT ORDERS =====
+    match /gift_orders/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.senderId) || isAdmin());
+      allow create: if request.auth != null && isOwner(incomingData().senderId);
+      allow update: if request.auth != null && (isOwner(resource.data.senderId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ===== ORDER STATUS HISTORY =====
+    match /order_status_history/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && (isAdmin() || isOwner(incomingData().updatedBy));
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ===== PUBLIC TRACKING LINKS (NO AUTH REQUIRED) =====
+    match /tracking_links/{docId} {
+      allow read: if true; // Public access for recipients
+      allow create: if request.auth != null;
+      allow update: if request.auth != null || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ===== BALANCE TRANSACTIONS =====
+    match /balance_transactions/{docId} {
+      allow read: if request.auth != null && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if request.auth != null && (isOwner(incomingData().userId) || isAdmin());
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ===== ADMIN ONLY COLLECTIONS =====
+    match /admin_settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /system_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ===== CATCH-ALL =====
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
