@@ -28,7 +28,7 @@ const loginSchema = z.object({
 /* -------------------- Production Check -------------------- */
 const PRODUCTION_DOMAINS = [
   "smsglobe.net",
-  "smsglobe-test.vercel.app",
+  "smsglobal.vercel.app",
 ];
 
 const isProduction = () => {
