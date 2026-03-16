@@ -7,7 +7,6 @@ const corsHeaders = {
 }
 
 serve(async (req: Request) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -15,7 +14,6 @@ serve(async (req: Request) => {
   try {
     const { cmd, ...params } = await req.json()
     
-    // Tell-A-Bot API configuration
     const API_BASE_URL = 'https://www.tellabot.com/sims/api_command.php'
     const API_KEY = 'zV17cs7yofh6GXW9g6Ec9hC9cQwqhjZX'
     const USERNAME = 'weszn'
