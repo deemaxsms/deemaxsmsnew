@@ -35,36 +35,35 @@ class AdminService {
     }
     return true;
   }
-
-  async createAdminProfile(uid: string, email: string, displayName?: string): Promise<void> {
+async createAdminProfile(uid: string, email: string, displayName?: string): Promise<void> {
     if (!this.isAdminEmail(email)) {
       throw new Error('Email not authorized for admin access');
     }
 
+    // This data ensures the user has full Admin privileges immediately
     const profileData: any = {
-      isAdmin: true,
+      isAdmin: true,               // CRITICAL: Matches your Firestore Rules
       adminRole: 'admin',
-      adminCreatedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
       email: email,
-      balance: 0,
-      suspended: false
+      balance: 0,                  // Required by your 'isValidUserCreation' Rule
+      cashback: 0,
+      suspended: false,
+      useCashbackFirst: true,
+      updatedAt: serverTimestamp(),
     };
 
-    // Add display name if provided
     if (displayName) {
       profileData.displayName = displayName;
     }
 
-    // Check if user document exists
     const userDocRef = doc(db, 'users', uid);
     const userDoc = await getDoc(userDocRef);
     
     if (userDoc.exists()) {
-      // Update existing document
+      // If user exists, we promote them to Admin
       await updateDoc(userDocRef, profileData);
     } else {
-      // Create new document with additional required fields
+      // If new user, add the creation timestamp
       profileData.createdAt = serverTimestamp();
       await setDoc(userDocRef, profileData);
     }

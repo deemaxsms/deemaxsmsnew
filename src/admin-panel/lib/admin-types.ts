@@ -43,7 +43,5 @@ export interface RevenueData {
 
 // Allowed admin emails
 export const ALLOWED_ADMIN_EMAILS = [
-  "muhammednetr@gmail.com",
-  "olamimuhammed2020@gmail.com",
-  "smsglobe01@gmail.com"
+  "deemaxsms@atomicmail.io" 
 ];
