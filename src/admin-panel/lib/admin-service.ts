@@ -35,39 +35,42 @@ class AdminService {
     }
     return true;
   }
+
 async createAdminProfile(uid: string, email: string, displayName?: string): Promise<void> {
-    if (!this.isAdminEmail(email)) {
-      throw new Error('Email not authorized for admin access');
-    }
-
-    // This data ensures the user has full Admin privileges immediately
-    const profileData: any = {
-      isAdmin: true,               // CRITICAL: Matches your Firestore Rules
-      adminRole: 'admin',
-      email: email,
-      balance: 0,                  // Required by your 'isValidUserCreation' Rule
-      cashback: 0,
-      suspended: false,
-      useCashbackFirst: true,
-      updatedAt: serverTimestamp(),
-    };
-
-    if (displayName) {
-      profileData.displayName = displayName;
-    }
-
-    const userDocRef = doc(db, 'users', uid);
-    const userDoc = await getDoc(userDocRef);
-    
-    if (userDoc.exists()) {
-      // If user exists, we promote them to Admin
-      await updateDoc(userDocRef, profileData);
-    } else {
-      // If new user, add the creation timestamp
-      profileData.createdAt = serverTimestamp();
-      await setDoc(userDocRef, profileData);
-    }
+  // 1. Security check remains the same
+  if (!this.isAdminEmail(email)) {
+    throw new Error('Email not authorized for admin access');
   }
+
+  // 2. Clean up the profile data. 
+  // We remove 'balance', 'cashback', and 'referrals' because 
+  // admins don't need these as staff members.
+  const profileData: any = {
+    isAdmin: true,
+    adminRole: 'admin',
+    email: email,
+    suspended: false,
+    updatedAt: serverTimestamp(),
+  };
+
+  if (displayName) {
+    profileData.displayName = displayName;
+  }
+
+  // 3. TARGET THE NEW COLLECTION
+  // Changing 'users' to 'admins' here is the most critical part.
+  const adminDocRef = doc(db, 'admins', uid);
+  const adminDoc = await getDoc(adminDocRef);
+  
+  if (adminDoc.exists()) {
+    // Update existing admin record
+    await updateDoc(adminDocRef, profileData);
+  } else {
+    // Create new admin record
+    profileData.createdAt = serverTimestamp();
+    await setDoc(adminDocRef, profileData);
+  }
+}
 
   async updateAdminProfile(uid: string, updateData: Partial<UserProfile>): Promise<void> {
     try {

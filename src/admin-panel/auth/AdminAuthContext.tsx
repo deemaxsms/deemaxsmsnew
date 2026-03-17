@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { firebaseAuth } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore'; // Added for direct admin lookup
+import { firebaseAuth, db } from '@/lib/firebase'; // Ensure db is exported from your firebase config
 import { adminService } from '../lib/admin-service';
 import { UserProfile } from '@/lib/firestore-service';
-import { firestoreService } from '@/lib/firestore-service';
 
 interface AdminAuthContextType {
   user: User | null;
@@ -22,15 +22,28 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const loadProfile = async (uid: string) => {
+  const loadProfile = async (firebaseUser: User) => {
     try {
-      const userProfile = await firestoreService.getUserProfile(uid);
-      setProfile(userProfile);
+      // 1. Check the new dedicated 'admins' collection
+      const adminDocRef = doc(db, 'admins', firebaseUser.uid);
+      const adminSnap = await getDoc(adminDocRef);
       
-      // Check if user is admin
-      const adminCheck = userProfile?.isAdmin || 
-        (user?.email && await adminService.isAdminEmail(user.email));
-      setIsAdmin(adminCheck);
+      const isAuthorizedEmail = adminService.isAdminEmail(firebaseUser.email || '');
+
+      if (adminSnap.exists()) {
+        // User exists in the admins collection
+        const adminData = adminSnap.data() as UserProfile;
+        setProfile(adminData);
+        setIsAdmin(true);
+      } else if (isAuthorizedEmail) {
+        // Email is authorized but doc doesn't exist yet (Bootstrap phase)
+        setProfile(null);
+        setIsAdmin(true);
+      } else {
+        // Not an admin in any way
+        setProfile(null);
+        setIsAdmin(false);
+      }
     } catch (error) {
       console.error('Error loading admin profile:', error);
       setProfile(null);
@@ -40,7 +53,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = async () => {
     if (user) {
-      await loadProfile(user.uid);
+      await loadProfile(user);
     }
   };
 
@@ -56,12 +69,13 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
-      setUser(user);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (currentUser) => {
+      setUser(currentUser);
       setLoading(true);
       
-      if (user) {
-        await loadProfile(user.uid);
+      if (currentUser) {
+        // Load profile using the new logic
+        await loadProfile(currentUser);
       } else {
         setProfile(null);
         setIsAdmin(false);
