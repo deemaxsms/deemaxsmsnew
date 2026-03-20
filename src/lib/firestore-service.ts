@@ -769,7 +769,7 @@ export const firestoreService = {
     );
   },
 
-  // ===== PURCHASE PRODUCT =====
+  // ===== ATOMIC PURCHASE PRODUCT =====
   async purchaseProduct(
     userId: string, 
     productId: string, 
@@ -780,150 +780,111 @@ export const firestoreService = {
       additionalNotes?: string;
     }
   ): Promise<{ success: boolean; orderId?: string; error?: string }> {
-    // Pre-flight checks (no database writes yet)
+    // 1. Pre-flight checks (Read-only)
     const profile = await this.getUserProfile(userId);
-    if (!profile) return { success: false, error: "User not found" };
-    
     const product = await this.getProductById(productId);
+
+    if (!profile) return { success: false, error: "User not found" };
     if (!product) return { success: false, error: "Product not found" };
     if (!product.isActive) return { success: false, error: "Product is not available" };
-    
-    // Validate purchase request
+
+    // Validate using your existing validator
     const validation = validatePurchaseRequest(userId, productId, profile.balance, product.price, requestDetails);
     if (!validation.isValid) {
-      console.error('❌ Purchase validation failed:', validation.errors);
       return { success: false, error: validation.errors.join('; ') };
     }
-    
-    // Log warnings if any
-    if (validation.warnings.length > 0) {
-      console.warn('⚠️ Purchase warnings:', validation.warnings);
-    }
-    
-    const newBalance = profile.balance - product.price;
-    let orderId: string | null = null;
-    
+
+    // Prepare References
+    const userRef = doc(db, "users", userId);
+    const orderRef = doc(collection(db, "product_orders"));
+    const transRef = doc(collection(db, "balance_transactions"));
+    const userBalanceRef = doc(db, "user_balances", userId);
+
     try {
-      // Clean request details to ensure Firestore compatibility
-      const cleanRequestDetails = requestDetails ? cleanFirestoreData(requestDetails) : undefined;
-      
-      // Step 1: Create order first (this is the main operation)
-      orderId = await this.createProductOrder({
-        userId,
-        userEmail: profile.email,
-        username: profile.username,
-        productId,
-        productName: product.name,
-        category: product.category,
-        price: product.price,
-        status: 'pending',
-        requestDetails: cleanRequestDetails
-      });
-      
-      console.log(`✅ Order created: ${orderId}`);
-      
-      // Step 2: Deduct balance (critical - must succeed)
-      await this.updateUserBalance(userId, newBalance);
-      console.log(`✅ Balance updated: ${profile.balance} → ${newBalance}`);
-      
-      // Step 3: Record transaction (critical - must succeed)
-      const transactionData = {
-        userId,
-        type: 'purchase' as const,
-        amount: -product.price,
-        description: `Purchase: ${product.name}`,
-        balanceAfter: newBalance
-      };
-      
-      // Validate transaction before recording
-      const txValidation = validateTransaction(
-        transactionData.userId,
-        transactionData.type,
-        transactionData.amount,
-        transactionData.description,
-        transactionData.balanceAfter
-      );
-      
-      if (!txValidation.isValid) {
-        throw new Error(`Transaction validation failed: ${txValidation.errors.join('; ')}`);
-      }
-      
-      await this.addBalanceTransaction(transactionData);
-      console.log(`✅ Transaction recorded: -$${product.price}`);
-      
-      // Send payment confirmation notification
-      try {
-        const { userNotificationService } = await import('./user-notification-service');
-        await userNotificationService.notifyPaymentConfirmed(
+      const result = await runTransaction(db, async (transaction) => {
+        // Double-check balance inside the transaction for concurrency safety
+        const userDoc = await transaction.get(userRef);
+        const userData = userDoc.data();
+        if (!userData || userData.balance < product.price) {
+          throw new Error("Insufficient balance at time of purchase");
+        }
+
+        const newBalance = userData.balance - product.price;
+        const cleanRequestDetails = requestDetails ? cleanFirestoreData(requestDetails) : null;
+
+        // STEP 1: Create the Order
+        transaction.set(orderRef, {
           userId,
-          orderId,
-          orderId, // Using orderId as orderNumber for now
-          product.name,
-          product.price
-        );
-        console.log(`Payment confirmation notification sent for order ${orderId}`);
-      } catch (notificationError) {
-        console.error('Failed to send payment confirmation notification:', notificationError);
-        // Don't fail the purchase if notification fails
-      }
-      
-      // Trigger real-time balance update in UI
-      try {
-        // Dispatch custom event for balance update
-        window.dispatchEvent(new CustomEvent('balanceUpdated', { 
-          detail: { newBalance, deduction: product.price } 
-        }));
-        console.log(`✅ Balance update event dispatched: ${newBalance}`);
-      } catch (eventError) {
-        console.warn('Failed to dispatch balance update event:', eventError);
-      }
-      
-      // Step 4: Update user_balances collection (optional - can fail)
-      try {
-        const balanceRef = doc(db, "user_balances", userId);
-        const balanceSnap = await getDoc(balanceRef);
-        if (balanceSnap.exists()) {
-          const balanceData = balanceSnap.data();
-          await updateDoc(balanceRef, {
-            balanceUSD: newBalance,
-            totalSpentUSD: Number(balanceData.totalSpentUSD || 0) + product.price,
-            totalTransactionsCount: Number(balanceData.totalTransactionsCount || 0) + 1,
-            lastTransactionAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          console.log(`✅ User balances collection updated`);
-        }
-      } catch (balanceError) {
-        console.warn(`⚠️ Failed to update user_balances collection (non-critical):`, balanceError);
-        // Don't fail the entire transaction for this
-      }
-      
-      return { success: true, orderId };
-      
-    } catch (error) {
+          userEmail: profile.email,
+          username: profile.username || null,
+          productId,
+          productName: product.name,
+          category: product.category,
+          price: product.price,
+          status: 'pending',
+          requestDetails: cleanRequestDetails,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+
+        // STEP 2: Deduct Balance
+        transaction.update(userRef, {
+          balance: newBalance,
+          updatedAt: serverTimestamp()
+        });
+
+        // STEP 3: Record Transaction Log
+        transaction.set(transRef, {
+          userId,
+          type: 'purchase',
+          amount: -product.price,
+          description: `Purchase: ${product.name}`,
+          balanceAfter: newBalance,
+          createdAt: serverTimestamp()
+        });
+
+        // STEP 4: Update Stats (Optional but included in transaction for consistency)
+        transaction.update(userBalanceRef, {
+          balanceUSD: newBalance,
+          totalSpentUSD: increment(product.price),
+          totalTransactionsCount: increment(1),
+          lastTransactionAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+
+        return { orderId: orderRef.id, newBalance };
+      });
+
+      // Post-transaction logic (Non-blocking)
+      this.handlePostPurchaseEffects(userId, result.orderId, product.name, product.price, result.newBalance);
+
+      return { success: true, orderId: result.orderId };
+
+    } catch (error: any) {
       console.error(`❌ Purchase failed:`, error);
-      
-      // ROLLBACK: If we created an order but failed later, delete it
-      if (orderId) {
-        try {
-          console.log(`🔄 Rolling back order: ${orderId}`);
-          await this.deleteProductOrder(orderId);
-          console.log(`✅ Order rollback successful`);
-        } catch (rollbackError) {
-          console.error(`❌ Failed to rollback order ${orderId}:`, rollbackError);
-          // Log this for manual cleanup
-        }
-      }
-      
-      // Return detailed error message
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       return { 
         success: false, 
-        error: `Purchase failed: ${errorMessage}. Please try again or contact support if the issue persists.` 
+        error: error.message || "An unexpected error occurred during purchase." 
       };
     }
   },
 
+  // Helper for non-critical side effects
+  async handlePostPurchaseEffects(userId: string, orderId: string, productName: string, price: number, newBalance: number) {
+    // Notify UI
+    window.dispatchEvent(new CustomEvent('balanceUpdated', { 
+      detail: { newBalance, deduction: price } 
+    }));
+
+    // Notify User
+    try {
+      const { userNotificationService } = await import('./user-notification-service');
+      await userNotificationService.notifyPaymentConfirmed(userId, orderId, orderId, productName, price);
+    } catch (e) {
+      console.warn("Notification failed, but purchase was successful.");
+    }
+  },
+  
   // Helper function to delete a product order (for rollback)
   async deleteProductOrder(orderId: string) {
     const docRef = doc(db, "product_orders", orderId);
@@ -931,10 +892,9 @@ export const firestoreService = {
   },
 
   // ===== GIFT DELIVERY INTEGRATION =====
-  
   /**
    * Process gift purchase with address and delivery details
-   * This integrates with the gift delivery system
+   * Transactional and Atomic
    */
   async purchaseGift(
     userId: string,
@@ -950,83 +910,95 @@ export const firestoreService = {
     }
   ): Promise<{ success: boolean; orderId?: string; orderNumber?: string; trackingCode?: string; error?: string }> {
     try {
-      // Import gift service dynamically to avoid circular dependencies
+      // 1. Dynamic Imports & Initial Data Fetching
       const { giftService } = await import('./gift-service');
-      
-      // Use the gift service to process the purchase
-      const result = await giftService.processGiftPurchase(
-        userId,
-        giftId,
-        addressId,
-        orderDetails
+      const { shippingService } = await import('./shipping-service');
+      const { addressService } = await import('./address-service');
+
+      const [profile, gift, addresses] = await Promise.all([
+        this.getUserProfile(userId),
+        giftService.getGiftById(giftId),
+        addressService.getUserAddresses(userId)
+      ]);
+
+      const address = addresses.find(addr => addr.id === addressId);
+
+      // 2. Pre-flight Validation
+      if (!profile) return { success: false, error: "User profile not found" };
+      if (!gift) return { success: false, error: "Gift not found" };
+      if (!address) return { success: false, error: "Delivery address not found" };
+
+      // 3. Calculate Total Cost
+      const shippingCalculation = await shippingService.calculateShippingFee(
+        { id: gift.id, title: gift.title, weight: gift.weight, sizeClass: gift.sizeClass, isFragile: gift.isFragile },
+        { countryCode: address.countryCode, countryName: address.countryName, state: address.state, city: address.city, latitude: address.latitude, longitude: address.longitude }
       );
 
-      if (result.success) {
-        // Deduct balance from user account
-        const profile = await this.getUserProfile(userId);
-        if (!profile) {
-          return { success: false, error: "User profile not found" };
+      const totalAmount = (gift.basePrice * orderDetails.quantity) + shippingCalculation.totalFee;
+
+      if (profile.balance < totalAmount) {
+        return { success: false, error: `Insufficient balance. Required: $${totalAmount.toFixed(2)}` };
+      }
+
+      // 4. Atomic Execution
+      // First, create the gift record through the gift service
+      const result = await giftService.processGiftPurchase(userId, giftId, addressId, orderDetails);
+
+      if (!result.success) {
+        return { success: false, error: result.error || "Gift processing failed" };
+      }
+
+      const userRef = doc(db, "users", userId);
+      const transRef = doc(collection(db, "balance_transactions"));
+      const userBalanceRef = doc(db, "user_balances", userId);
+
+      await runTransaction(db, async (transaction) => {
+        const userDoc = await transaction.get(userRef);
+        const currentBalance = userDoc.data()?.balance || 0;
+
+        if (currentBalance < totalAmount) {
+          throw new Error("Insufficient balance at transaction time.");
         }
 
-        // Get gift details for pricing
-        const gift = await giftService.getGiftById(giftId);
-        if (!gift) {
-          return { success: false, error: "Gift not found" };
-        }
+        const newBalance = currentBalance - totalAmount;
 
-        // Calculate total amount (gift price + shipping)
-        const { shippingService } = await import('./shipping-service');
-        const { addressService } = await import('./address-service');
-        
-        const addresses = await addressService.getUserAddresses(userId);
-        const address = addresses.find(addr => addr.id === addressId);
-        
-        if (!address) {
-          return { success: false, error: "Delivery address not found" };
-        }
+        // Deduct Balance
+        transaction.update(userRef, {
+          balance: newBalance,
+          updatedAt: serverTimestamp()
+        });
 
-        const shippingCalculation = await shippingService.calculateShippingFee(
-          {
-            id: gift.id,
-            title: gift.title,
-            weight: gift.weight,
-            sizeClass: gift.sizeClass,
-            isFragile: gift.isFragile
-          },
-          {
-            countryCode: address.countryCode,
-            countryName: address.countryName,
-            state: address.state,
-            city: address.city,
-            latitude: address.latitude,
-            longitude: address.longitude
-          }
-        );
-
-        const totalAmount = (gift.basePrice * orderDetails.quantity) + shippingCalculation.totalFee;
-        const newBalance = profile.balance - totalAmount;
-
-        // Update balance
-        await this.updateUserBalance(userId, newBalance);
-
-        // Record transaction
-        await this.addBalanceTransaction({
+        // Record Transaction
+        transaction.set(transRef, {
           userId,
           type: 'purchase',
           amount: -totalAmount,
-          description: `Gift Purchase: ${gift.title} (${orderDetails.quantity}x) + Shipping`,
-          balanceAfter: newBalance
+          description: `Gift: ${gift.title} (${orderDetails.quantity}x) + Shipping`,
+          balanceAfter: newBalance,
+          createdAt: serverTimestamp()
         });
 
-        console.log(`✅ Gift purchase completed: ${result.orderNumber}`);
-      }
+        // Update Stats
+        transaction.update(userBalanceRef, {
+          balanceUSD: newBalance,
+          totalSpentUSD: increment(totalAmount),
+          lastTransactionAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      });
+
+      // 5. Trigger UI updates
+      window.dispatchEvent(new CustomEvent('balanceUpdated', { 
+        detail: { newBalance: profile.balance - totalAmount } 
+      }));
 
       return result;
-    } catch (error) {
+
+    } catch (error: any) {
       console.error('Error processing gift purchase:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to process gift purchase'
+        error: error.message || 'Failed to process gift purchase'
       };
     }
   }

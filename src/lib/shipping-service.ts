@@ -1,5 +1,5 @@
 // Shipping Fee Calculation Service for Gift Delivery System
-import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from './firebase';
 import { addressService } from './address-service';
 
@@ -101,9 +101,9 @@ class ShippingService {
       } as SizeFee));
 
       this.cacheTimestamp = now;
-      console.log('✅ Shipping rates loaded:', this.shippingRatesCache.length, 'rates');
+      console.log('✅ Shipping rates and size fees cached');
     } catch (error) {
-      console.error('Error loading shipping rates:', error);
+      console.error('Error loading shipping data:', error);
       throw error;
     }
   }
@@ -124,7 +124,7 @@ class ShippingService {
     try {
       await this.loadShippingRates();
 
-      // If admin has overridden the fee
+      // Handle Admin Override
       if (options.adminOverride && options.adminOverride > 0) {
         return {
           baseFee: 0,
@@ -138,102 +138,82 @@ class ShippingService {
           totalFee: options.adminOverride,
           currency: options.currency || 'USD',
           breakdown: [{
-            component: 'Admin Override',
+            component: 'Adjustment',
             amount: options.adminOverride,
             description: 'Shipping fee set by admin'
           }]
         };
       }
 
-      // Find shipping rate for destination country
+      // Find shipping rate for destination
       const shippingRate = this.shippingRatesCache.find(rate => 
         rate.fromCountry === this.HOME_COUNTRY && 
         rate.toCountry === deliveryAddress.countryCode
       );
 
       if (!shippingRate) {
-        throw new Error(`No shipping rate found for ${deliveryAddress.countryName}`);
+        throw new Error(`Shipping is currently unavailable to ${deliveryAddress.countryName}`);
       }
 
-      // Calculate components
+      // 1. Calculate Base Components
       const baseFee = shippingRate.baseFee;
       const weightFee = gift.weight * shippingRate.ratePerKg;
       
-      // Distance calculation
+      // Distance calculation with fallback to avoid NaN
+      const destLat = deliveryAddress.latitude || this.HOME_COORDINATES.lat;
+      const destLng = deliveryAddress.longitude || this.HOME_COORDINATES.lng;
+      
       const distance = addressService.calculateDistance(
         this.HOME_COORDINATES.lat,
         this.HOME_COORDINATES.lng,
-        deliveryAddress.latitude,
-        deliveryAddress.longitude
+        destLat,
+        destLng
       );
       const distanceFee = distance * shippingRate.ratePerKm;
 
-      // Size fee
+      // Size and handling
       const sizeFeeData = this.sizeFeesCache.find(sf => sf.sizeClass === gift.sizeClass);
       const sizeFee = sizeFeeData?.baseFee || 0;
+      const fragileFee = gift.isFragile ? (baseFee * 0.2) : 0; // 20% surcharge for handling
 
-      // Fragile fee (percentage of base fee)
-      const fragileFee = gift.isFragile ? (baseFee * 0.2) : 0; // 20% of base fee
-
-      // Calculate subtotal
+      // 2. Subtotal and Multipliers
       const subtotal = baseFee + weightFee + distanceFee + sizeFee + fragileFee;
-
-      // Apply multipliers
       const isInternational = deliveryAddress.countryCode !== this.HOME_COUNTRY;
-      const internationalMultiplier = isInternational ? shippingRate.internationalMultiplier : 1;
-      const fragileMultiplier = gift.isFragile ? shippingRate.fragileMultiplier : 1;
+      const intlMultiplier = isInternational ? shippingRate.internationalMultiplier : 1;
+      const fragMultiplier = gift.isFragile ? shippingRate.fragileMultiplier : 1;
 
-      // Final calculation
-      const totalFee = Math.round(subtotal * internationalMultiplier * fragileMultiplier * 100) / 100;
+      // 3. Final Total (Compounding Multipliers)
+      const totalFee = Number((subtotal * intlMultiplier * fragMultiplier).toFixed(2));
 
-      // Build breakdown
+      // 4. Build Detailed Breakdown
       const breakdown = [
         {
           component: 'Base Fee',
           amount: baseFee,
-          description: `Base shipping to ${deliveryAddress.countryName}`
+          description: `Standard rate to ${deliveryAddress.countryName}`
         },
         {
-          component: 'Weight Fee',
-          amount: weightFee,
-          description: `${gift.weight}kg × $${shippingRate.ratePerKg}/kg`
-        },
-        {
-          component: 'Distance Fee',
-          amount: distanceFee,
-          description: `${Math.round(distance)}km × $${shippingRate.ratePerKm}/km`
+          component: 'Logistics',
+          amount: Number((weightFee + distanceFee).toFixed(2)),
+          description: `${gift.weight}kg over ${Math.round(distance)}km`
         }
       ];
 
       if (sizeFee > 0) {
         breakdown.push({
-          component: 'Size Fee',
+          component: 'Size Surcharge',
           amount: sizeFee,
-          description: `${gift.sizeClass} package`
+          description: `${gift.sizeClass} package class`
         });
       }
 
-      if (fragileFee > 0) {
+      // Consolidate multipliers into a "Premium Handling" line if they exist
+      if (intlMultiplier > 1 || fragMultiplier > 1 || fragileFee > 0) {
+        const premiumAmount = Number((totalFee - (baseFee + weightFee + distanceFee + sizeFee)).toFixed(2));
         breakdown.push({
-          component: 'Fragile Handling',
-          amount: fragileFee,
-          description: 'Special handling for fragile items'
-        });
-      }
-
-      if (internationalMultiplier > 1) {
-        breakdown.push({
-          component: 'International Multiplier',
-          amount: subtotal * (internationalMultiplier - 1),
-          description: `${((internationalMultiplier - 1) * 100).toFixed(0)}% international fee`
-        });
-      }
-
-      if (fragileMultiplier > 1) {
-        breakdown.push({
-          component: 'Fragile Multiplier',
-          amount: subtotal * internationalMultiplier * (fragileMultiplier - 1),
-          description: `${((fragileMultiplier - 1) * 100).toFixed(0)}% fragile multiplier`
+          component: 'Premium Handling',
+          amount: premiumAmount,
+          description: 'International/Fragile handling surcharges'
         });
       }
 
@@ -244,8 +224,8 @@ class ShippingService {
         sizeFee,
         fragileFee,
         subtotal,
-        internationalMultiplier,
-        fragileMultiplier,
+        internationalMultiplier: intlMultiplier,
+        fragileMultiplier: fragMultiplier,
         totalFee,
         currency: options.currency || 'USD',
         breakdown
@@ -264,27 +244,19 @@ class ShippingService {
     try {
       await this.loadShippingRates();
       
-      const rate = this.shippingRatesCache.find(r => 
-        r.fromCountry === this.HOME_COUNTRY && r.toCountry === countryCode
-      );
+      if (countryCode === this.HOME_COUNTRY) return 2; // Domestic
       
-      if (!rate) {
-        return 7; // Default 7 days if no specific rate found
-      }
+      // Regional Logistics Logic
+      const westAfricanNeighbors = ['GH', 'BJ', 'TG', 'CM'];
+      if (westAfricanNeighbors.includes(countryCode)) return 3;
+
+      const fastTrackAfrica = ['KE', 'UG', 'ZA', 'RW'];
+      if (fastTrackAfrica.includes(countryCode)) return 5;
       
-      // Estimate based on distance and country
-      if (countryCode === this.HOME_COUNTRY) {
-        return 2; // Domestic delivery
-      } else if (['GH', 'BJ', 'TG', 'CM'].includes(countryCode)) {
-        return 3; // West African neighbors
-      } else if (['KE', 'UG', 'TZ', 'ZA'].includes(countryCode)) {
-        return 5; // Other African countries
-      } else {
-        return 7; // International
-      }
+      return 7; // General International
     } catch (error) {
       console.error('Error getting delivery estimate:', error);
-      return 7; // Default fallback
+      return 7;
     }
   }
 
@@ -294,14 +266,10 @@ class ShippingService {
   async isShippingAvailable(countryCode: string): Promise<boolean> {
     try {
       await this.loadShippingRates();
-      
       return this.shippingRatesCache.some(rate => 
-        rate.fromCountry === this.HOME_COUNTRY && 
-        rate.toCountry === countryCode &&
-        rate.isActive
+        rate.toCountry === countryCode && rate.isActive
       );
-    } catch (error) {
-      console.error('Error checking shipping availability:', error);
+    } catch {
       return false;
     }
   }
@@ -312,12 +280,8 @@ class ShippingService {
   async getAvailableShippingCountries(): Promise<string[]> {
     try {
       await this.loadShippingRates();
-      
-      return this.shippingRatesCache
-        .filter(rate => rate.fromCountry === this.HOME_COUNTRY && rate.isActive)
-        .map(rate => rate.toCountry);
-    } catch (error) {
-      console.error('Error getting available countries:', error);
+      return [...new Set(this.shippingRatesCache.map(rate => rate.toCountry))];
+    } catch {
       return [];
     }
   }
@@ -327,11 +291,9 @@ class ShippingService {
    */
   formatShippingBreakdown(calculation: ShippingCalculation): string {
     const lines = calculation.breakdown.map(item => 
-      `${item.component}: $${item.amount.toFixed(2)} (${item.description})`
+      `${item.component}: $${item.amount.toFixed(2)}`
     );
-    
     lines.push(`Total: $${calculation.totalFee.toFixed(2)}`);
-    
     return lines.join('\n');
   }
 
@@ -339,20 +301,14 @@ class ShippingService {
    * Get shipping rate for admin editing
    */
   async getShippingRate(fromCountry: string, toCountry: string): Promise<ShippingRate | null> {
-    try {
-      await this.loadShippingRates();
-      
-      return this.shippingRatesCache.find(rate => 
-        rate.fromCountry === fromCountry && rate.toCountry === toCountry
-      ) || null;
-    } catch (error) {
-      console.error('Error getting shipping rate:', error);
-      return null;
-    }
+    await this.loadShippingRates();
+    return this.shippingRatesCache.find(rate => 
+      rate.fromCountry === fromCountry && rate.toCountry === toCountry
+    ) || null;
   }
 
   /**
-   * Clear cache (useful for admin updates)
+   * Clear cache
    */
   clearCache(): void {
     this.shippingRatesCache = [];

@@ -39,8 +39,8 @@ const signupSchema = z.object({
 const PRODUCTION_DOMAINS = [
   "smsglobe.net",
   "app.smsglobe.net", 
-  "smsglobe-test.vercel.app",
-  "deemax-3223e.firebaseapp.com"
+  "smsglobal.vercel.app",
+  "sms-globe.firebaseapp.com"
 ];
 
 const isProduction = () => {

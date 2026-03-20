@@ -731,52 +731,68 @@ class GiftService {
     orderId: string,
     amount: number
   ): Promise<{ success: boolean; error?: string }> {
+    const userRef = doc(db, "users", userId);
+    const orderRef = doc(db, "gift_orders", orderId);
+    const transRef = doc(collection(db, "balance_transactions"));
+    const userBalanceRef = doc(db, "user_balances", userId);
+
     try {
-      // Import firestoreService
-      const { firestoreService } = await import('./firestore-service');
-      
-      // Get user profile
-      const profile = await firestoreService.getUserProfile(userId);
-      if (!profile) {
-        return { success: false, error: 'User profile not found' };
-      }
+      await runTransaction(db, async (transaction) => {
+        const userDoc = await transaction.get(userRef);
+        const orderDoc = await transaction.get(orderRef);
 
-      // Check balance
-      if (profile.balance < amount) {
-        return { success: false, error: 'Insufficient balance' };
-      }
+        if (!userDoc.exists()) throw new Error("User profile not found");
+        if (!orderDoc.exists()) throw new Error("Order not found");
 
-      // Calculate new balance
-      const newBalance = profile.balance - amount;
+        const userData = userDoc.data();
+        const orderData = orderDoc.data();
 
-      // Update balance in Firestore
-      await firestoreService.updateUserBalance(userId, newBalance);
-      console.log(`✅ Balance updated: ${profile.balance} → ${newBalance}`);
+        if (userData.balance < amount) throw new Error("Insufficient balance");
+        if (orderData.paymentStatus === 'completed') throw new Error("Order already paid");
 
-      // Get order details for transaction record
-      const order = await this.getOrderById(orderId);
-      if (!order) {
-        return { success: false, error: 'Order not found' };
-      }
+        const newBalance = userData.balance - amount;
 
-      // Record transaction
-      await firestoreService.addBalanceTransaction({
-        userId,
-        type: 'purchase',
-        amount: -amount,
-        description: `Gift purchase: ${order.giftTitle} - Order #${order.orderNumber}`,
-        balanceAfter: newBalance,
-        transactionId: orderId
+        // 1. Update User Balance
+        transaction.update(userRef, {
+          balance: newBalance,
+          updatedAt: serverTimestamp()
+        });
+
+        // 2. Update Order Status
+        transaction.update(orderRef, {
+          paymentStatus: 'completed',
+          status: 'confirmed',
+          confirmedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+
+        // 3. Record Transaction
+        transaction.set(transRef, {
+          userId,
+          type: 'purchase',
+          amount: -amount,
+          description: `Gift: ${orderData.giftTitle} - Order #${orderData.orderNumber}`,
+          balanceAfter: newBalance,
+          transactionId: orderId,
+          createdAt: serverTimestamp()
+        });
+
+        // 4. Update Stats
+        transaction.update(userBalanceRef, {
+          balanceUSD: newBalance,
+          totalSpentUSD: increment(amount),
+          lastTransactionAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
       });
-      console.log(`✅ Transaction recorded: -$${amount}`);
 
-      // Update order payment status
-      await this.updateOrderPaymentStatus(orderId, 'completed', 'confirmed');
+      // Post-transaction: Notification (Non-blocking)
+      this.triggerPaymentNotifications(userId, orderId, amount);
 
       return { success: true };
-    } catch (error) {
-      console.error('Error processing gift payment:', error);
-      return { success: false, error: 'Payment processing failed' };
+    } catch (error: any) {
+      console.error('Payment Transaction Failed:', error);
+      return { success: false, error: error.message || 'Payment failed' };
     }
   }
 
@@ -877,63 +893,52 @@ class GiftService {
       return false;
     }
   }
+async cancelOrder(orderId: string): Promise<{ success: boolean; error?: string }> {
+    const orderRef = doc(db, 'gift_orders', orderId);
 
-  async cancelOrder(orderId: string, reason: string = 'User requested'): Promise<{ success: boolean; refundAmount?: number; error?: string }> {
     try {
-      const order = await this.getOrderById(orderId);
-      if (!order) {
-        return { success: false, error: 'Order not found' };
-      }
-
-      // Check if order can be cancelled (within 24 hours and not delivered)
-      const orderAge = Date.now() - order.createdAt.getTime();
-      const canCancel = orderAge <= 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-      
-      if (!canCancel && order.status !== 'pending_payment') {
-        return { success: false, error: 'Order can only be cancelled within 24 hours of placement' };
-      }
-
-      if (order.status === 'delivered') {
-        return { success: false, error: 'Delivered orders cannot be cancelled' };
-      }
-
-      // Process refund if payment was completed
-      let refundAmount = 0;
-      if (order.paymentStatus === 'completed') {
-        const refundResult = await this.processGiftRefund(order.senderId, orderId, order.totalAmount);
-        if (!refundResult.success) {
-          return { success: false, error: refundResult.error || 'Refund processing failed' };
+      await runTransaction(db, async (transaction) => {
+        const orderDoc = await transaction.get(orderRef);
+        if (!orderDoc.exists()) throw new Error("Order not found");
+        
+        const order = orderDoc.data();
+        if (order.status === 'cancelled') throw new Error("Order already cancelled");
+        if (order.status === 'shipped' || order.status === 'delivered') {
+          throw new Error("Cannot cancel order after it has shipped");
         }
-        refundAmount = order.totalAmount;
-      }
 
-      // Update order status
-      const orderRef = doc(db, 'gift_orders', orderId);
-      await updateDoc(orderRef, {
-        status: 'cancelled',
-        paymentStatus: order.paymentStatus === 'completed' ? 'refunded' : 'cancelled',
-        updatedAt: serverTimestamp()
-      });
+        const userRef = doc(db, "users", order.senderId);
+        const userDoc = await transaction.get(userRef);
+        
+        // If paid, process refund inside the same transaction
+        if (order.paymentStatus === 'completed') {
+          const newBalance = (userDoc.data()?.balance || 0) + order.totalAmount;
+          
+          transaction.update(userRef, { balance: newBalance });
+          
+          // Log refund transaction
+          const transRef = doc(collection(db, "balance_transactions"));
+          transaction.set(transRef, {
+            userId: order.senderId,
+            type: 'refund',
+            amount: order.totalAmount,
+            description: `Refund: Order #${order.orderNumber}`,
+            balanceAfter: newBalance,
+            createdAt: serverTimestamp()
+          });
+        }
 
-      // Deactivate tracking link
-      const trackingQuery = query(
-        collection(db, 'tracking_links'),
-        where('orderId', '==', orderId)
-      );
-      const trackingSnapshot = await getDocs(trackingQuery);
-      
-      for (const trackingDoc of trackingSnapshot.docs) {
-        await updateDoc(trackingDoc.ref, {
-          isActive: false,
+        // Finalize order status
+        transaction.update(orderRef, {
+          status: 'cancelled',
+          paymentStatus: order.paymentStatus === 'completed' ? 'refunded' : 'cancelled',
           updatedAt: serverTimestamp()
         });
-      }
-      
-      console.log(`✅ Cancelled order ${orderId}, refund: ${refundAmount}`);
-      return { success: true, refundAmount };
-    } catch (error) {
-      console.error('Error cancelling order:', error);
-      return { success: false, error: 'Failed to cancel order' };
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
     }
   }
 }
