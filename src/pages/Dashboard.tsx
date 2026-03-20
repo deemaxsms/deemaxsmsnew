@@ -107,7 +107,6 @@ const Dashboard = () => {
 
       // Use the new balance manager for purchase
       const description = `SMS ${type === "rental" ? "rental" : "one-time"} number - ${service}`;
-      const result = await processPurchase(price, description);
 
       if (!result.success) {
         toast.error(result.error || "Failed to purchase SMS number");

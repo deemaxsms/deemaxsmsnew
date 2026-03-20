@@ -89,56 +89,71 @@ export const TransactionHealthCheck = () => {
     }
   };
 
-  const autoFixIssues = async () => {
-    if (!user || !healthData) return;
+ const autoFixIssues = async () => {
+  if (!user || !healthData) return;
 
-    setFixing(true);
-    setFixProgress(0);
+  setFixing(true);
+  setFixProgress(0);
+  
+  // We'll use this to clear the interval in both success and error blocks
+  let progressInterval: NodeJS.Timeout;
 
-    try {
-      // Simulate progress for better UX
-      const progressInterval = setInterval(() => {
-        setFixProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
+  try {
+    progressInterval = setInterval(() => {
+      setFixProgress(prev => Math.min(prev + 10, 90));
+    }, 200);
 
-      const result = await fixBalance();
-      
+    // 1. REQUEST THE FIX FROM YOUR BACKEND
+    // We send the user.uid so the server knows whose balance to recalculate
+    const response = await fetch('/api/sync-account-health', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ userId: user.uid })
+    });
+
+    // 2. CHECK FOR HTTP ERRORS (404, 500, etc.)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server responded with ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    // 3. HANDLE SUCCESS
+    if (result.success) {
       clearInterval(progressInterval);
       setFixProgress(100);
 
-      if (result.success) {
-        toast.success("🎉 Balance issues fixed successfully!", {
-          description: "Your account balance has been corrected and synchronized."
-        });
-        
-        // Update fix attempts counter
-        setHealthData(prev => prev ? {
-          ...prev,
-          fixAttempts: (prev.fixAttempts || 0) + 1
-        } : null);
-
-        // Refresh profile to get updated balance
-        await refreshProfile();
-        
-        // Re-run health check to verify fix
-        setTimeout(() => {
-          runHealthCheck();
-        }, 1000);
-      } else {
-        toast.error("❌ Failed to fix balance issues", {
-          description: result.error || "An unknown error occurred during the fix process."
-        });
-      }
-    } catch (error) {
-      console.error("Auto-fix failed:", error);
-      toast.error("❌ Auto-fix failed", {
-        description: "Unable to fix balance issues. Please contact support."
+      toast.success("🎉 Account synchronized!", {
+        description: "Your balance now matches your transaction history."
       });
-    } finally {
+      
+      // Update the global auth state so the header balance updates
+      await refreshProfile();
+      
+      // Re-verify after 1 second to turn the health check green ✅
+      setTimeout(() => runHealthCheck(), 1000);
+    } else {
+      throw new Error(result.error || "Unknown sync error");
+    }
+
+  } catch (error: any) {
+    if (progressInterval!) clearInterval(progressInterval);
+    console.error("Sync process failed:", error);
+    
+    toast.error("❌ Sync failed", {
+      description: error.message || "Please contact support to manually verify your transactions."
+    });
+  } finally {
+    // Small delay before hiding the progress bar for better UX
+    setTimeout(() => {
       setFixing(false);
       setFixProgress(0);
-    }
-  };
+    }, 500);
+  }
+};
 
   const getHealthStatus = () => {
     if (!healthData) return { color: "gray", text: "Unknown", icon: Activity };
