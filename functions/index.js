@@ -5,9 +5,9 @@ const cors = require('cors');
 const corsHandler = cors({ origin: true });
 
 // TellaBot API configuration
-const TELLABOT_API_URL = 'https://www.tellabot.com/sims/api_command.php';
-const TELLABOT_USER = 'wesz';
-const TELLABOT_API_KEY = 'zV17cs7yofh6GXW9g6Ec9hC9cQwqhjZX';
+const TELLABOT_API_URL = process.env.TELLABOT_API_URL;
+const TELLABOT_USER = process.env.VITE_TELL_A_BOT_USERNAME;
+const TELLABOT_API_KEY = process.env.VITE_TELL_A_BOT_API_KEY;
 
 exports.tellabotProxy = functions.https.onRequest((request, response) => {
   corsHandler(request, response, async () => {
@@ -28,8 +28,8 @@ exports.tellabotProxy = functions.https.onRequest((request, response) => {
       // Build query parameters for TellaBot API
       const queryParams = new URLSearchParams({
         cmd,
-        user: TELLABOT_USER,
-        api_key: TELLABOT_API_KEY,
+        user: process.env.VITE_TELL_A_BOT_USERNAME,
+        api_key: process.env.VITE_TELL_A_BOT_API_KEY,
         ...Object.fromEntries(
           Object.entries(params).map(([key, value]) => [key, String(value)])
         )

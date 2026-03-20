@@ -12,7 +12,12 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "// --- Database Management ---": "",
+    "db:setup": "node scripts/create_balance_collection.js",
+    "db:audit": "node scripts/audit_balance_security.js",
+    "db:fix": "node scripts/fix_user_profiles.js",
+    "db:admin": "node scripts/firebase-admin.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

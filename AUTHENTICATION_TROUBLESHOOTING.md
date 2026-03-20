@@ -24,8 +24,8 @@
    Add these domains:
    ```
    localhost
-   deemax-3223e.firebaseapp.com
-   smsglobe-test.vercel.app
+   sms-globe.firebaseapp.com
+   smsglobal.vercel.app
    app.smsglobe.net
    ```
 
@@ -39,8 +39,8 @@
 2. **Find your OAuth 2.0 client ID and edit it**
 3. **Add Authorized JavaScript origins:**
    ```
-   https://deemax-3223e.firebaseapp.com
-   https://smsglobe-test.vercel.app
+   https://sms-globe.firebaseapp.com
+   https://smsglobal.vercel.app
    https://app.smsglobe.net
    http://localhost:3000
    http://localhost:5173
@@ -48,8 +48,8 @@
 
 4. **Add Authorized redirect URIs:**
    ```
-   https://deemax-3223e.firebaseapp.com/__/auth/handler
-   https://smsglobe-test.vercel.app/__/auth/handler
+   https://sms-globe.firebaseapp.com__/auth/handler
+   https://smsglobal.vercel.app/__/auth/handler
    https://app.smsglobe.net/__/auth/handler
    http://localhost:3000/__/auth/handler
    http://localhost:5173/__/auth/handler
@@ -62,8 +62,8 @@
 3. **Add these domains:**
    ```
    localhost
-   deemax-3223e.firebaseapp.com
-   smsglobe-test.vercel.app
+   sms-globe.firebaseapp.com
+   smsglobal.vercel.app
    app.smsglobe.net
    ```
 

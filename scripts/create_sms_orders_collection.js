@@ -1,61 +1,89 @@
 import admin from 'firebase-admin';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const serviceAccount = JSON.parse(readFileSync(join(__dirname, '../deemax-3223e-firebase-adminsdk-qg4o1-8afdc5d3b8.json'), 'utf8'));
+/**
+ * Modernized Initialization:
+ * Prioritizes Environment Variables (Vercel/Production)
+ * Falls back to the new sms-globe JSON file
+ */
+function initAdmin() {
+  // 1. Check for Environment Variables (Secure Method)
+  if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.VITE_PUBLIC_FIREBASE_PROJECT_ID || "sms-globe",
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+      databaseURL: `https://${process.env.VITE_PUBLIC_FIREBASE_PROJECT_ID || 'sms-globe'}-default-rtdb.firebaseio.com`
+    });
+    console.log('✅ Initialized admin using Environment Variables');
+    return;
+  }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: 'https://deemax-3223e-default-rtdb.firebaseio.com'
-});
-
-const db = admin.firestore();
+  // 2. Fallback: Local JSON file (matching your new download)
+  const svcPath = join(__dirname, '../sms-globe-firebase-adminsdk-fbsvc-ba1d935918.json');
+  
+  if (existsSync(svcPath)) {
+    const serviceAccount = JSON.parse(readFileSync(svcPath, 'utf8'));
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: `https://${serviceAccount.project_id}-default-rtdb.firebaseio.com`
+    });
+    console.log('✅ Initialized admin with local service account JSON');
+  } else {
+    // 3. Last resort
+    admin.initializeApp();
+    console.log('⚠️  Initialized admin with default credentials');
+  }
+}
 
 async function createBalanceCollection() {
   try {
-    console.log('Creating Balance collection structure...');
+    initAdmin();
+    const db = admin.firestore();
+    
+    console.log('🚀 Setting up User Balances collection structure...');
 
-    // Create a sample balance document to establish the collection
+    // We use a real-world sample structure that matches your Health Check logic
     const sampleBalance = {
-      id: 'sample_balance',
-      userId: 'sample_user_id',
-      userEmail: 'user@example.com',
-      username: 'sample_user',
-      balanceUSD: 10.00, // Current balance in USD
-      totalDepositedUSD: 10.00, // Total deposited in USD
-      totalSpentUSD: 0.00, // Total spent in USD
-      currency: 'USD', // Primary currency
+      userId: 'setup_template',
+      userEmail: 'admin@sms-globe.com',
+      username: 'admin_template',
+      balanceUSD: 0.00, 
+      totalDepositedUSD: 0.00, 
+      totalSpentUSD: 0.00, 
+      currency: 'USD',
       lastDepositAt: admin.firestore.Timestamp.now(),
       lastTransactionAt: admin.firestore.Timestamp.now(),
       createdAt: admin.firestore.Timestamp.now(),
       updatedAt: admin.firestore.Timestamp.now(),
-      // Additional fields for tracking
-      pendingDeposits: 0, // Number of pending deposits
-      totalDepositsCount: 1, // Total number of successful deposits
-      totalTransactionsCount: 1, // Total number of balance transactions
-      referralEarningsUSD: 0.00, // Earnings from referrals
-      cashbackUSD: 0.00, // Cashback balance
-      useCashbackFirst: false, // Preference for using cashback
+      pendingDeposits: 0, 
+      totalDepositsCount: 0,
+      totalTransactionsCount: 0,
+      referralEarningsUSD: 0.00,
+      cashbackUSD: 0.00,
+      useCashbackFirst: false,
+      healthStatus: 'verified' // Added to match your new health check logic
     };
 
-    // Add the sample document
-    await db.collection('user_balances').doc('sample_balance').set(sampleBalance);
+    // Add the template document
+    await db.collection('user_balances').doc('template').set(sampleBalance);
+    console.log('✅ Collection structure established.');
 
-    console.log('Balance collection created successfully!');
-    console.log('Sample document added to establish collection structure.');
+    // Optional: Keep the template for reference or delete it
+    await db.collection('user_balances').doc('template').delete();
+    console.log('🧹 Cleaned up template document.');
 
-    // Clean up sample document
-    await db.collection('user_balances').doc('sample_balance').delete();
-    console.log('Sample document cleaned up.');
-
-    console.log('✅ User Balances collection is ready for use!');
+    console.log('🎉 Database is ready for the Transaction Health Check system!');
 
   } catch (error) {
-    console.error('Error creating Balance collection:', error);
+    console.error('❌ Error during setup:', error.message);
   } finally {
     process.exit(0);
   }

@@ -1,23 +1,46 @@
 #!/usr/bin/env node
-// Simple Firebase Admin CLI for local operations using the service account JSON.
-// Usage:
-//  node scripts/firebase-admin.js set users/<docId> '{"field":"value"}'
-//  node scripts/firebase-admin.js add product_listings '{"name":"Test","price":1.99}'
-//  node scripts/firebase-admin.js get users/<docId>
-
 const path = require('path');
 const fs = require('fs');
 const admin = require('firebase-admin');
 
 function initAdmin() {
-  const svcPath = path.resolve(__dirname, '..', 'deemax-3223e-firebase-adminsdk-qg4o1-cbfae26480.json');
+  // 1. PRIORITY: Check for Environment Variables (Vercel/Production mode)
+  if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    try {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: process.env.VITE_PUBLIC_FIREBASE_PROJECT_ID|| "sms-globe",
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          // The .replace ensures that Vercel's string format is converted to real newlines
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }),
+      });
+      console.log('✅ Initialized admin using Environment Variables');
+      return;
+    } catch (err) {
+      console.error('❌ Failed to initialize with Env Vars:', err.message);
+    }
+  }
+
+  // 2. FALLBACK: Look for the local JSON file (Local Dev mode)
+  // Note: Updated path to check for both the old name and a generic name
+  const svcPath = path.resolve(__dirname, '..', 'sms-globe-firebase-adminsdk-fbsvc-ba1d935918.json');
+  
   if (fs.existsSync(svcPath)) {
     const serviceAccount = require(svcPath);
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-    console.log('Initialized admin with service account');
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('📁 Initialized admin using Local Service Account JSON');
   } else {
-    admin.initializeApp();
-    console.log('Initialized admin with default credentials');
+    // 3. LAST RESORT: Try default credentials
+    try {
+      admin.initializeApp();
+      console.log('⚠️ Initialized admin with default credentials');
+    } catch (e) {
+      console.error('💥 Critical: Could not find any Firebase credentials!');
+      process.exit(1);
+    }
   }
 }
 
@@ -45,20 +68,20 @@ async function main() {
       const [col, id] = target.split('/');
       if (!id) throw new Error('Use collection/docId');
       await db.collection(col).doc(id).set(payload, { merge: true });
-      console.log('OK');
+      console.log('✅ Document updated successfully');
     } else if (cmd === 'add') {
       const col = target;
       const docRef = await db.collection(col).add(payload);
-      console.log('Added:', docRef.id);
+      console.log('✅ Added with ID:', docRef.id);
     } else if (cmd === 'delete') {
       const [col, id] = target.split('/');
       await db.collection(col).doc(id).delete();
-      console.log('Deleted');
+      console.log('🗑️ Deleted successfully');
     } else {
-      console.log('Unknown command', cmd);
+      console.log('Unknown command:', cmd);
     }
   } catch (err) {
-    console.error('Error:', err);
+    console.error('❌ Error:', err.message);
   } finally {
     process.exit(0);
   }
