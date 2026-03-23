@@ -250,6 +250,19 @@ export interface SMSTellabotService {
   recommended_markup: number;
 }
 
+export const fixImgurLink = (url: string) => {
+  if (!url) return "";
+  // If it's an album link, convert it to a direct i.imgur link
+  if (url.includes("imgur.com/a/")) {
+    return url.replace("imgur.com/a/", "i.imgur.com/") + ".png";
+  }
+  // If it's a standard link without the 'i.' prefix
+  if (url.includes("imgur.com/") && !url.includes("i.imgur.com")) {
+    return url.replace("imgur.com/", "i.imgur.com/") + ".png";
+  }
+  return url;
+};
+
 export const firestoreService = {
   // ===== USER PROFILE =====
   async getUserProfile(userId: string): Promise<UserProfile | null> {

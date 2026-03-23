@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -9,7 +10,23 @@ import { useAuth } from "@/lib/auth-context";
 import { firestoreService, ProductListing, ProductCategory } from "@/lib/firestore-service";
 import { PurchaseRequestModal } from "@/components/PurchaseRequestModal";
 import { toast } from "sonner";
-import { Loader2, Wifi, Globe, Shield, Monitor, Gift, ShoppingCart, Clock, Check } from "lucide-react";
+import { Loader2, Wifi, Globe, Shield, Monitor, Gift, ShoppingCart } from "lucide-react";
+
+// Helper to convert Imgur Album links to Direct Image links
+const fixImgurLink = (url: string) => {
+  if (!url) return "";
+  const cleanUrl = url.trim();
+  if (cleanUrl.includes("imgur.com/a/")) {
+    return cleanUrl.replace("imgur.com/a/", "i.imgur.com/") + ".png";
+  }
+  if (cleanUrl.includes("imgur.com/") && !cleanUrl.includes("i.imgur.com")) {
+    return cleanUrl.replace("imgur.com/", "i.imgur.com/") + ".png";
+  }
+  return cleanUrl;
+};
+
+// Define categories array strictly to help TypeScript mapping
+const categories: ProductCategory[] = ['esim', 'proxy', 'vpn', 'rdp', 'gift'];
 
 const categoryIcons: Record<ProductCategory, React.ReactNode> = {
   esim: <Wifi className="h-5 w-5" />,
@@ -29,14 +46,11 @@ const categoryLabels: Record<ProductCategory, string> = {
 
 const Marketplace = () => {
   const navigate = useNavigate();
-  const { user, profile, deductFromBalance } = useAuth();
+  const { user, profile } = useAuth();
   const [products, setProducts] = useState<ProductListing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [purchasing, setPurchasing] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<ProductListing | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-
-
 
   useEffect(() => {
     loadProducts();
@@ -95,20 +109,20 @@ const Marketplace = () => {
             </p>
           </div>
 
-          {/* Balance Card */}
           {user && profile && (
-            <Card className="bg-primary text-primary-foreground">
-              <CardContent className="p-4">
+            <Card className="bg-primary text-primary-foreground border-none shadow-md">
+              <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm opacity-80">Your Balance</p>
-                    <p className="text-2xl font-bold">${profile.balance?.toFixed(2) || '0.00'}</p>
+                    <p className="text-sm opacity-90 font-medium">Your Available Balance</p>
+                    <p className="text-3xl font-bold">${profile.balance?.toFixed(2) || '0.00'}</p>
                   </div>
                   <Button 
                     variant="secondary" 
+                    className="font-semibold"
                     onClick={() => navigate("/dashboard")}
                   >
-                    Top Up
+                    Top Up Now
                   </Button>
                 </div>
               </CardContent>
@@ -116,87 +130,84 @@ const Marketplace = () => {
           )}
 
           {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex justify-center py-24">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
             </div>
           ) : (
-            <div className="space-y-12">
-              {(Object.keys(categoryLabels) as ProductCategory[]).map((cat) => {
+            <div className="space-y-16">
+              {categories.map((cat) => {
                 const categoryProducts = groupedProducts[cat] || [];
                 if (categoryProducts.length === 0) return null;
 
                 return (
                   <section key={cat}>
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="p-2 bg-primary/10 rounded-lg">
+                    <div className="flex items-center gap-3 mb-8">
+                      <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
                         {categoryIcons[cat]}
                       </div>
-                      <h2 className="text-2xl font-bold">{categoryLabels[cat]}</h2>
-                      <Badge variant="secondary">{categoryProducts.length} products</Badge>
+                      <h2 className="text-2xl font-bold tracking-tight">{categoryLabels[cat]}</h2>
+                      <Badge variant="outline" className="ml-2 font-bold uppercase tracking-wider text-[10px]">
+                        {categoryProducts.length} Items
+                      </Badge>
                     </div>
 
-                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {categoryProducts.map((product) => (
-                        <Card key={product.id} className="overflow-hidden hover:shadow-lg transition-shadow duration-300 group">
-                          <CardHeader className="p-0 relative">
-                            <div className="h-48 bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center overflow-hidden">
-                              <img
-                                src={product.image || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=300&h=200&fit=crop'}
-                                alt={product.name}
-                                className="object-cover h-full w-full group-hover:scale-105 transition-transform duration-300"
-                              />
-                            </div>
-                            <Badge
-                              variant="default"
-                              className="absolute top-3 left-3 text-xs font-medium"
-                            >
-                              {categoryLabels[product.category]}
-                            </Badge>
-                            {product.outOfStock && (
-                              <Badge variant="destructive" className="absolute top-3 right-3 text-xs">
-                                Out of Stock
-                              </Badge>
-                            )}
-                          </CardHeader>
+                    <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      {categoryProducts.map((product) => {
+                        const displayImage = fixImgurLink(product.image || product.imageUrl || '');
+                        const fallbackImage = 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop';
 
-                          <CardContent className="p-4">
-                            <div className="text-sm text-muted-foreground mb-1">{product.provider}</div>
-                            <h3 className="font-semibold text-lg mb-2 line-clamp-2">{product.name}</h3>
-                            <div className="text-sm text-muted-foreground mb-3">{product.validity} • {product.dataAmount}</div>
-                            {product.features && product.features.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mb-3">
-                                {product.features.slice(0, 2).map((feature: string, idx: number) => (
-                                  <Badge key={idx} variant="outline" className="text-xs">
-                                    {feature}
-                                  </Badge>
-                                ))}
-                                {product.features.length > 2 && (
-                                  <Badge variant="outline" className="text-xs">
-                                    +{product.features.length - 2} more
-                                  </Badge>
-                                )}
+                        return (
+                          <Card key={product.id} className="overflow-hidden border-muted hover:shadow-xl transition-all duration-300 group flex flex-col">
+                            <CardHeader className="p-0 relative">
+                              <div className="h-44 bg-muted/20 flex items-center justify-center overflow-hidden">
+                                <img
+                                  src={displayImage || fallbackImage}
+                                  alt={product.name}
+                                  referrerPolicy="no-referrer"
+                                  className="object-cover h-full w-full group-hover:scale-110 transition-transform duration-700"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = fallbackImage;
+                                  }}
+                                />
                               </div>
-                            )}
-                            <div className="flex items-center justify-between mb-4">
-                              <div className="font-bold text-xl text-primary">
-                                ${Number(product.price).toFixed(2)}
-                              </div>
-                            </div>
-                            <Button 
-                              className="w-full"
-                              onClick={() => handlePurchase(product)}
-                              disabled={purchasing === product.id || product.outOfStock}
-                            >
-                              {purchasing === product.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              ) : (
-                                <ShoppingCart className="h-4 w-4 mr-2" />
+                              {product.outOfStock && (
+                                <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px] flex items-center justify-center">
+                                  <Badge variant="destructive" className="px-4 py-1 font-bold shadow-lg">
+                                    SOLD OUT
+                                  </Badge>
+                                </div>
                               )}
-                              {product.outOfStock ? 'Out of Stock' : 'Purchase'}
-                            </Button>
-                          </CardContent>
-                        </Card>
-                      ))}
+                            </CardHeader>
+
+                            <CardContent className="p-5 flex-1 flex flex-col">
+                              <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">
+                                {product.provider}
+                              </div>
+                              <h3 className="font-bold text-lg mb-2 line-clamp-1 group-hover:text-primary transition-colors">
+                                {product.name}
+                              </h3>
+                              
+                              <p className="text-xs text-muted-foreground mb-4 font-medium italic">
+                                {product.validity} • {product.dataAmount}
+                              </p>
+
+                              <div className="mt-auto pt-4 border-t border-muted/50 flex items-center justify-between">
+                                <div className="font-black text-xl text-foreground">
+                                  ${Number(product.price).toFixed(2)}
+                                </div>
+                                <Button 
+                                  size="sm"
+                                  className="rounded-full px-4 font-bold shadow-sm"
+                                  onClick={() => handlePurchase(product)}
+                                  disabled={product.outOfStock}
+                                >
+                                  {product.outOfStock ? 'Closed' : 'Buy Now'}
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                   </section>
                 );
@@ -207,7 +218,6 @@ const Marketplace = () => {
       </main>
       <Footer />
       
-      {/* Purchase Request Modal */}
       <PurchaseRequestModal
         open={showPurchaseModal}
         onOpenChange={setShowPurchaseModal}
