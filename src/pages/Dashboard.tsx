@@ -106,7 +106,11 @@ const Dashboard = () => {
     toast.info("Purchasing SMS number...");
 
     const description = `SMS ${type === "rental" ? "rental" : "one-time"} number - ${service}`;
+
+    // --- ADD THIS LINE BELOW ---
     const result = await processPurchase(price, description);
+    // ---------------------------
+
     if (!result.success) {
       toast.error(result.error || "Failed to purchase SMS number");
       return;
@@ -686,5 +690,5 @@ const Dashboard = () => {
 
 export default Dashboard;
 function refreshProfile() {
-  console.log("Profile refresh requested after successful transaction.");
+  console.log("Profile refresh triggered successfully.");
 }
