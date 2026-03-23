@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { firestoreService } from "@/lib/firestore-service";
 import { getUsdToNgnRate, usdToNgn, formatCurrency } from "@/lib/currency";
-import { cleanFirestoreData } from "@/lib/transaction-validation";
+import { cleanFirestoreData } from "@/lib/transaction-validator";
 
 // Type for FlutterwaveCheckout (global function)
 declare global {
