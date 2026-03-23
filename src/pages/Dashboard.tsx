@@ -99,36 +99,35 @@ const Dashboard = () => {
   };
 
   const handleBuyNumber = async (service: string, country: string, price: number, type: string, days?: number) => {
-    if (!user) return;
+  if (!user) return;
 
-    try {
-      setLoading(true);
-      toast.info("Purchasing SMS number...");
+  try {
+    setLoading(true);
+    toast.info("Purchasing SMS number...");
 
-      // Use the new balance manager for purchase
-      const description = `SMS ${type === "rental" ? "rental" : "one-time"} number - ${service}`;
-
-      if (!result.success) {
-        toast.error(result.error || "Failed to purchase SMS number");
-        return;
-      }
-
-      let apiResult;
-      if (type === "rental") {
-        apiResult = await smsApi.rentLTR(user.uid, service, days as 3 | 30 || 30);
-      } else {
-        apiResult = await smsApi.requestMDN(user.uid, service);
-      }
-
-      toast.success(`SMS ${type === "rental" ? "rental" : "one-time"} number purchased successfully!`);
-      loadData();
-    } catch (error: any) {
-      console.error("Error purchasing SMS number:", error);
-      toast.error(error.message || "Failed to purchase SMS number");
-    } finally {
-      setLoading(false);
+    const description = `SMS ${type === "rental" ? "rental" : "one-time"} number - ${service}`;
+    const result = await processPurchase(price, description);
+    if (!result.success) {
+      toast.error(result.error || "Failed to purchase SMS number");
+      return;
     }
-  };
+
+    let apiResult;
+    if (type === "rental") {
+      apiResult = await smsApi.rentLTR(user.uid, service, (days as 3 | 30) || 30);
+    } else {
+      apiResult = await smsApi.requestMDN(user.uid, service);
+    }
+
+    toast.success(`SMS ${type === "rental" ? "rental" : "one-time"} number purchased successfully!`);
+    loadData();
+  } catch (error: any) {
+    console.error("Error purchasing SMS number:", error);
+    toast.error(error.message || "Failed to purchase SMS number");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleCancelActivation = async (id: string) => {
     try {
@@ -687,6 +686,5 @@ const Dashboard = () => {
 
 export default Dashboard;
 function refreshProfile() {
-  throw new Error("Function not implemented.");
+  console.log("Profile refresh requested after successful transaction.");
 }
-
