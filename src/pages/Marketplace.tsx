@@ -10,9 +10,8 @@ import { useAuth } from "@/lib/auth-context";
 import { firestoreService, ProductListing, ProductCategory } from "@/lib/firestore-service";
 import { PurchaseRequestModal } from "@/components/PurchaseRequestModal";
 import { toast } from "sonner";
-import { Loader2, Wifi, Globe, Shield, Monitor, Gift, ShoppingCart } from "lucide-react";
+import { Loader2, Wifi, Globe, Shield, Monitor, Gift } from "lucide-react";
 
-// Helper to convert Imgur Album links to Direct Image links
 const fixImgurLink = (url: string) => {
   if (!url) return "";
   const cleanUrl = url.trim();
@@ -25,7 +24,6 @@ const fixImgurLink = (url: string) => {
   return cleanUrl;
 };
 
-// Define categories array strictly to help TypeScript mapping
 const categories: ProductCategory[] = ['esim', 'proxy', 'vpn', 'rdp', 'gift'];
 
 const categoryIcons: Record<ProductCategory, React.ReactNode> = {
