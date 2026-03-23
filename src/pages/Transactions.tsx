@@ -215,17 +215,18 @@ const Transactions = () => {
                               </p>
                             </div>
                           </div>
-                          <div className="text-left sm:text-right shrink-0">
-                            <p className={`font-bold text-base md:text-lg ${
-                              isPositiveTransaction(transaction.type) ? 'text-success' : 'text-destructive'
-                            }`}>
-                              {isPositiveTransaction(transaction.type) ? '+' : '-'}
-                              {formatCurrency(Number(transaction.amount), 'USD')}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Balance: {formatCurrency(Number(transaction.balanceAfter), 'USD')}
-                            </p>
-                          </div>
+                         <div className="text-left sm:text-right shrink-0">
+  <p className={`font-bold text-base md:text-lg ${
+    isPositiveTransaction(transaction.type) ? 'text-success' : 'text-destructive'
+  }`}>
+    {/* Use Math.abs to avoid double negatives if amount is already -10 */}
+    {isPositiveTransaction(transaction.type) ? '+' : '-'}
+    {formatCurrency(Math.abs(Number(transaction.amount)), 'USD')}
+  </p>
+  <p className="text-xs text-muted-foreground">
+    Balance: {formatCurrency(Number(transaction.balanceAfter), 'USD')}
+  </p>
+</div>
                         </div>
                       ))}
                     </div>

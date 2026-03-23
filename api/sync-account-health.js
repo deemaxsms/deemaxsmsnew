@@ -4,10 +4,8 @@ import admin from 'firebase-admin';
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
-      // Using the exact name from your .env
       projectId: process.env.VITE_PUBLIC_FIREBASE_PROJECT_ID || "sms-globe", 
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // The Private Key must be set in Vercel/Environment, not the public .env
       privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     }),
   });
@@ -16,47 +14,74 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 export default async function handler(req, res) {
+  // Only allow POST requests
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+  
   const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: "User ID required" });
 
   try {
     const userRef = db.collection('users').doc(userId);
-    
-    // 1. USE THE COLLECTION NAME FROM YOUR AUDIT SCRIPT
-    const txSnapshot = await db.collection('balance_transactions')
-      .where('userId', '==', userId)
-      .get();
+    const userBalanceRef = db.collection('user_balances').doc(userId);
+    const txCollection = db.collection('balance_transactions');
 
-    let calculatedBalance = 0;
+    // Run as a transaction to ensure data integrity
+    const result = await db.runTransaction(async (t) => {
+      const userSnap = await t.get(userRef);
+      if (!userSnap.exists) throw new Error("User profile does not exist");
 
-    // 2. APPLY THE "DEPOSIT VS PURCHASE" LOGIC
-    txSnapshot.forEach(doc => {
-      const tx = doc.data();
-      const amount = Math.abs(tx.amount || 0);
+      // Fetch all transactions for this specific user
+      const txSnapshot = await t.get(txCollection.where('userId', '==', userId));
       
-      if (['deposit', 'refund', 'referral_bonus'].includes(tx.type)) {
+      let calculatedBalance = 0;
+      let txCount = 0;
+
+      txSnapshot.forEach(doc => {
+        const tx = doc.data();
+        txCount++;
+        
+        // Summing: Deposits are (+), Purchases are (-)
+        const amount = Number(tx.amount || 0);
         calculatedBalance += amount;
-      } else if (['purchase', 'withdrawal'].includes(tx.type)) {
-        calculatedBalance -= amount;
-      }
-    });
+      });
 
-    const finalBalance = Math.max(0, calculatedBalance);
+      // Safety check: Avoid negative balances during a sync
+      const finalBalance = Math.max(0, calculatedBalance);
+      const now = admin.firestore.FieldValue.serverTimestamp();
 
-    // 3. SECURE UPDATE (Bypasses Firestore Rules)
-    await userRef.update({ 
-      balance: finalBalance,
-      lastSync: new Date().toISOString(),
-      healthStatus: 'verified'
+      // 1. Update the primary User document
+      t.update(userRef, { 
+        balance: finalBalance,
+        lastSync: now,
+        updatedAt: now,
+        healthStatus: 'verified',
+        auditInfo: {
+          lastAuditTxCount: txCount,
+          syncedAt: now
+        }
+      });
+
+      // 2. Update the User Balance Stats collection (Crucial for UI consistency)
+      t.update(userBalanceRef, {
+        balanceUSD: finalBalance,
+        lastTransactionAt: now,
+        updatedAt: now
+      });
+
+      return { finalBalance, txCount };
     });
 
     return res.status(200).json({ 
       success: true, 
-      newBalance: finalBalance,
-      updatedAt: new Date().toISOString()
+      newBalance: result.finalBalance,
+      transactionsAudited: result.txCount
     });
+
   } catch (error) {
-    console.error("Admin Sync Error:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    console.error("CRITICAL: Account Health Sync Failed:", error);
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message || "Internal Server Error during synchronization" 
+    });
   }
 }

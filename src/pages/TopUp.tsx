@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { firestoreService } from "@/lib/firestore-service";
 import { getUsdToNgnRate, usdToNgn, formatCurrency } from "@/lib/currency";
+import { cleanFirestoreData } from "@/lib/transaction-validation";
 
 // Type for FlutterwaveCheckout (global function)
 declare global {
@@ -29,7 +30,6 @@ const TopUp = () => {
 
   const quickAmounts = [5, 10, 25, 50, 100, 250];
 
-  // Load Flutterwave script once
   useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://checkout.flutterwave.com/v3.js";
@@ -43,7 +43,6 @@ const TopUp = () => {
     };
   }, []);
 
-  // Fetch exchange rate on mount
   useEffect(() => {
     fetchExchangeRate();
   }, []);
@@ -77,29 +76,25 @@ const TopUp = () => {
     setLoading(true);
 
     try {
-      // Generate unique tx reference
       const txRef = `txn_${Date.now()}_${user.uid.slice(0, 8)}`;
-
-      // Get Flutterwave public key from environment
       const publicKey = import.meta.env.VITE_PUBLIC_FLW_PUBLIC_KEY;
 
       if (typeof window.FlutterwaveCheckout !== "function") {
-        throw new Error("Flutterwave script not loaded yet. Please refresh and try again.");
+        throw new Error("Flutterwave script not loaded yet. Please refresh.");
       }
 
-      // Launch Flutterwave checkout
       window.FlutterwaveCheckout({
         public_key: publicKey,
         tx_ref: txRef,
         amount: ngnAmount,
         currency: "NGN",
         payment_options: "card,banktransfer,ussd",
-        meta: {
+        meta: cleanFirestoreData({
           userId: user.uid,
           amountUSD: amountNum,
           amountNGN: ngnAmount,
           exchangeRate: exchangeRate
-        },
+        }),
         customer: {
           email: profile.email,
           name: profile.displayName || profile.email.split("@")[0],
@@ -114,13 +109,12 @@ const TopUp = () => {
           
           if (data.status === "successful" || data.status === "completed") {
             try {
-              // Process payment directly - no server needed!
               const transactionId = String(data.transaction_id || data.id || Date.now());
               
-              // Update balance instantly in UI
+              // 1. Optimistic UI Update
               addToBalance(amountNum);
 
-              // Update balance in Firestore (background)
+              // 2. Background Firestore Sync
               try {
                 const result = await firestoreService.processPayment(
                   user.uid,
@@ -129,38 +123,35 @@ const TopUp = () => {
                   txRef,
                   transactionId
                 );
-                // Sync with actual balance from Firestore
+                
                 if (result.success && result.newBalance !== undefined) {
                   updateBalance(result.newBalance);
                 }
-              } catch (error) {
-                console.error("Error updating balance in Firestore:", error);
-                // Revert balance if Firestore update fails
+              } catch (dbError) {
+                console.error("Firestore sync error:", dbError);
+                // Rollback if DB write failed
                 addToBalance(-amountNum);
-                toast.error("Failed to update balance. Please contact support.");
+                toast.error("Balance sync failed. Please contact support.");
               }
 
-              toast.success(`Successfully added ${formatCurrency(amountNum, 'USD')} to your balance!`, {
+              toast.success(`Successfully added ${formatCurrency(amountNum, 'USD')}!`, {
                 icon: <CheckCircle className="h-4 w-4" />,
                 duration: 5000,
-                action: {
-                  label: "View Receipt",
-                  onClick: () => navigate(`/receipt/${txRef}`)
-                }
               });
 
-              // Navigate to receipt page
+              // 3. Always redirect on success
               navigate(`/receipt/${txRef}`);
               
             } catch (error) {
-              console.error("Error processing payment:", error);
-              toast.error("Payment successful but failed to update balance. Please contact support.");
+              console.error("Processing error:", error);
+              toast.error("Error finalizing transaction.");
+            } finally {
+              setLoading(false);
             }
           } else {
-            toast.error("Payment failed or was not completed.");
+            toast.error("Payment was not completed.");
+            setLoading(false);
           }
-          
-          setLoading(false);
         },
         onclose: () => {
           toast.info("Payment cancelled.");
@@ -169,7 +160,7 @@ const TopUp = () => {
       });
     } catch (error: any) {
       console.error("Top up error:", error);
-      toast.error(error?.message || "Failed to start payment. Please try again.");
+      toast.error(error?.message || "Failed to start payment.");
       setLoading(false);
     }
   };
@@ -196,7 +187,6 @@ const TopUp = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Quick Amount Selection */}
             <div className="space-y-3">
               <Label className="text-base font-medium">Select Amount (USD)</Label>
               <div className="grid grid-cols-3 gap-3">
@@ -214,7 +204,6 @@ const TopUp = () => {
               </div>
             </div>
 
-            {/* Custom Amount Input */}
             <div className="space-y-3">
               <Label htmlFor="custom-amount" className="text-base font-medium">
                 Or Enter Custom Amount (USD)
@@ -234,7 +223,6 @@ const TopUp = () => {
               </div>
             </div>
 
-            {/* Exchange Rate & NGN Amount Display */}
             {amountNum > 0 && (
               <Card className="bg-muted/50">
                 <CardContent className="p-4 space-y-3">
@@ -271,7 +259,6 @@ const TopUp = () => {
               </Card>
             )}
 
-            {/* Submit Button */}
             <Button
               onClick={handleTopUp}
               disabled={!amount || amountNum < 1 || loading}
@@ -291,12 +278,8 @@ const TopUp = () => {
             </Button>
 
             <div className="text-center space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Secure payment powered by Flutterwave
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Funds will be credited to your account immediately after payment confirmation
-              </p>
+              <p className="text-sm text-muted-foreground">Secure payment powered by Flutterwave</p>
+              <p className="text-xs text-muted-foreground">Funds credited immediately after confirmation</p>
             </div>
           </CardContent>
         </Card>

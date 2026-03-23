@@ -12,7 +12,10 @@ import {
   addDoc,
   deleteDoc,
   serverTimestamp,
-  Timestamp
+  Timestamp,
+  runTransaction,
+  increment,
+  arrayUnion
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { validatePurchaseRequest, validateTransaction, validateProductOrder, cleanFirestoreData } from "./transaction-validator";
@@ -405,32 +408,51 @@ export const firestoreService = {
 
   // ===== SIMPLE PAYMENT PROCESSING =====
   async processPayment(userId: string, amountUSD: number, amountNGN: number, txRef: string, transactionId: string) {
-    const profile = await this.getUserProfile(userId);
-    if (!profile) throw new Error('User profile not found');
+  const userRef = doc(db, "users", userId);
+  const userBalanceRef = doc(db, "user_balances", userId);
+  const transRef = doc(collection(db, "balance_transactions"));
 
-    const newBalance = (profile.balance || 0) + amountUSD;
+  try {
+    return await runTransaction(db, async (transaction) => {
+      const userDoc = await transaction.get(userRef);
+      if (!userDoc.exists()) throw new Error('User profile not found');
 
-    try {
-      // Update user balance
-      await this.updateUserBalance(userId, newBalance);
+      const currentBalance = userDoc.data().balance || 0;
+      const newBalance = currentBalance + amountUSD;
 
-      // Add transaction record
-      await this.addBalanceTransaction({
+      // 1. Update Primary User Doc
+      transaction.update(userRef, {
+        balance: newBalance,
+        updatedAt: serverTimestamp()
+      });
+
+      // 2. Update Stats Doc (Keep them in sync!)
+      transaction.update(userBalanceRef, {
+        balanceUSD: newBalance,
+        totalTransactionsCount: increment(1),
+        lastTransactionAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      // 3. Create Audit Log (Use CLEAN data)
+      transaction.set(transRef, cleanFirestoreData({
         userId,
         type: 'deposit',
-        amount: amountUSD,
+        amount: amountUSD, // Positive for deposits
         description: `Top up via Flutterwave - ₦${amountNGN.toLocaleString()}`,
         balanceAfter: newBalance,
         txRef,
-        transactionId
-      });
+        transactionId,
+        createdAt: serverTimestamp()
+      }));
 
       return { success: true, newBalance };
-    } catch (err) {
-      console.error('Error processing payment:', err);
-      throw err;
-    }
-  },
+    });
+  } catch (err) {
+    console.error('❌ Payment Transaction Failed:', err);
+    throw err;
+  }
+},
 
   // ===== ACTIVATIONS/ORDERS =====
   async createActivation(activation: Omit<Activation, 'id' | 'createdAt' | 'updatedAt'>) {
@@ -464,60 +486,56 @@ export const firestoreService = {
 
   // ===== REFERRALS =====
   async applyReferralCode(userId: string, referralCode: string): Promise<boolean> {
-    const colRef = collection(db, "users");
-    const q = query(colRef, where("referralCode", "==", referralCode));
-    const snapshot = await getDocs(q);
-    
-    if (snapshot.empty) {
-      return false;
-    }
-    
-    const referrer = snapshot.docs[0];
-    const referrerId = referrer.id;
-    
-    if (referrerId === userId) {
-      return false;
-    }
-    
-    await this.updateUserProfile(userId, { referredBy: referrerId });
-    
-    const referrerData = referrer.data();
-    const newReferralCount = (referrerData.referralCount || 0) + 1;
-    const bonusAmount = 1;
-    const newReferralEarnings = (referrerData.referralEarnings || 0) + bonusAmount;
-    const newBalance = (referrerData.balance || 0) + bonusAmount;
-    
-    await updateDoc(doc(db, "users", referrerId), {
-      referralCount: newReferralCount,
-      referralEarnings: newReferralEarnings,
+  const usersCol = collection(db, "users");
+  const q = query(usersCol, where("referralCode", "==", referralCode));
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty || snapshot.docs[0].id === userId) return false;
+  
+  const referrerId = snapshot.docs[0].id;
+  const bonusAmount = 1;
+
+  await runTransaction(db, async (transaction) => {
+    const referrerRef = doc(db, "users", referrerId);
+    const referrerBalanceRef = doc(db, "user_balances", referrerId);
+    const userRef = doc(db, "users", userId);
+    const transRef = doc(collection(db, "balance_transactions"));
+
+    const referrerSnap = await transaction.get(referrerRef);
+    const newBalance = (referrerSnap.data()?.balance || 0) + bonusAmount;
+
+    // 1. Update Referrer
+    transaction.update(referrerRef, {
       balance: newBalance,
+      referralCount: increment(1),
+      referralEarnings: increment(bonusAmount),
       updatedAt: serverTimestamp()
     });
 
-    // Update user_balances collection
-    const balanceRef = doc(db, "user_balances", referrerId);
-    const balanceSnap = await getDoc(balanceRef);
-    if (balanceSnap.exists()) {
-      const balanceData = balanceSnap.data();
-      await updateDoc(balanceRef, {
-        balanceUSD: newBalance,
-        referralEarningsUSD: newReferralEarnings,
-        totalTransactionsCount: Number(balanceData.totalTransactionsCount || 0) + 1,
-        lastTransactionAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-    
-    await this.addBalanceTransaction({
+    // 2. Update Referrer Stats
+    transaction.update(referrerBalanceRef, {
+      balanceUSD: newBalance,
+      referralEarningsUSD: increment(bonusAmount),
+      totalTransactionsCount: increment(1),
+      updatedAt: serverTimestamp()
+    });
+
+    // 3. Link the new User
+    transaction.update(userRef, { referredBy: referrerId });
+
+    // 4. Create Audit Log
+    transaction.set(transRef, {
       userId: referrerId,
       type: 'referral_bonus',
       amount: bonusAmount,
       description: 'Referral bonus',
-      balanceAfter: newBalance
+      balanceAfter: newBalance,
+      createdAt: serverTimestamp()
     });
-    
-    return true;
-  },
+  });
+  
+  return true;
+},
 
   async getReferredUsers(userId: string): Promise<ReferredUser[]> {
     const colRef = collection(db, "users");
@@ -743,24 +761,21 @@ export const firestoreService = {
     });
   },
 
-  async addSMSMessage(orderId: string, message: Omit<SMSMessageRecord, 'id'>) {
-    const messageId = Date.now().toString();
-    const smsMessage: SMSMessageRecord = {
-      ...message,
-      id: messageId
-    };
+async addSMSMessage(orderId: string, message: Omit<SMSMessageRecord, 'id'>) {
+  const docRef = doc(db, "sms_orders", orderId);
+  const smsMessage: SMSMessageRecord = {
+    ...message,
+    id: Date.now().toString()
+  };
 
-    const order = await this.getSMSOrder(orderId);
-    if (!order) throw new Error("SMS order not found");
+  // Use arrayUnion to prevent overwriting messages if multiple arrive at once
+  await updateDoc(docRef, { 
+    smsMessages: arrayUnion(smsMessage),
+    updatedAt: serverTimestamp()
+  });
 
-    const updatedMessages = [...(order.smsMessages || []), smsMessage];
-    await this.updateSMSOrder(orderId, { 
-      smsMessages: updatedMessages,
-      updatedAt: serverTimestamp()
-    });
-
-    return smsMessage;
-  },
+  return smsMessage;
+},
 
   async getActiveSMSOrders(userId: string): Promise<SMSOrder[]> {
     const orders = await this.getUserSMSOrders(userId);

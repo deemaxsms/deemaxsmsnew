@@ -58,16 +58,16 @@ export const TransactionHealthCheck = () => {
       const result = await verifyBalance();
       
       // Get additional data for enhanced display
-      const enhancedData: HealthData = {
-        isValid: result.isValid,
-        discrepancy: result.discrepancy,
-        currentBalance: result.currentBalance || profile?.balance || 0,
-        calculatedBalance: result.calculatedBalance || ((profile?.balance || 0) - result.discrepancy),
-        transactionCount: result.transactionCount || 0,
-        lastCheck: new Date(),
-        fixAttempts: healthData?.fixAttempts || 0
-      };
-
+   const enhancedData: HealthData = {
+  isValid: result.isValid,
+  discrepancy: result.discrepancy,
+  // Check for 'balance' (most common) or 'profileBalance'
+  currentBalance: (result as any).balance ?? (result as any).profileBalance ?? profile?.balance ?? 0,
+  calculatedBalance: (result as any).calculatedBalance ?? ((profile?.balance || 0) - result.discrepancy),
+  transactionCount: (result as any).transactionCount || 0,
+  lastCheck: new Date(),
+  fixAttempts: healthData?.fixAttempts || 0
+};
       setHealthData(enhancedData);
 
       if (result.isValid) {
