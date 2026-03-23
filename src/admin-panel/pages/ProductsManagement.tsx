@@ -1261,13 +1261,13 @@ export function ProductsManagement() {
         </CardContent>
       </Card>
 
-     {/* Create Product Dialog */}
+   {/* Create Product Dialog */}
 <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
   <DialogContent className="max-w-2xl">
     <DialogHeader>
       <DialogTitle>Create New Product</DialogTitle>
       <DialogDescription>
-        Add a new product to your catalog with duration-based pricing
+        Add a new product with custom duration and pricing
       </DialogDescription>
     </DialogHeader>
     
@@ -1303,7 +1303,7 @@ export function ProductsManagement() {
           </div>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="provider">Provider *</Label>
             <Input
@@ -1314,37 +1314,24 @@ export function ProductsManagement() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="pricingPlan">Duration & Price (USD) *</Label>
-            <Select 
-              onValueChange={(value) => {
-                const [duration, price] = value.split('|');
-                setFormData({ 
-                  ...formData, 
-                  duration: duration, 
-                  price: parseFloat(price) 
-                });
-              }}
-            >
-              <SelectTrigger id="pricingPlan">
-                <SelectValue placeholder="Select Plan (Duration - Price)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1 month|20.00">1 Month - $20.00</SelectItem>
-                <SelectItem value="3 months|55.00">3 Months - $55.00</SelectItem>
-                <SelectItem value="6 months|100.00">6 Months - $100.00</SelectItem>
-                <SelectItem value="1 year|180.00">1 Year - $180.00</SelectItem>
-                <SelectItem value="2 years|320.00">2 Years - $320.00</SelectItem>
-                <SelectItem value="4 years|600.00">4 Years - $600.00</SelectItem>
-              </SelectContent>
-            </Select>
-            {formData.price > 0 && (
-              <div className="text-xs font-medium text-blue-600">
-                Selected: {formData.duration} @ ${formData.price.toFixed(2)} 
-                <span className="text-muted-foreground ml-1">
-                  (NGN: {formatStatsAmount(formData.price).secondary})
-                </span>
-              </div>
-            )}
+            <Label htmlFor="duration">Duration *</Label>
+            <Input
+              id="duration"
+              value={formData.duration}
+              onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+              placeholder="e.g., 1 Month, 1 Year"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="price">Price (USD) *</Label>
+            <Input
+              id="price"
+              type="number"
+              step="0.01"
+              value={formData.price}
+              onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+              placeholder="0.00"
+            />
           </div>
         </div>
 
@@ -1398,15 +1385,6 @@ export function ProductsManagement() {
         <h3 className="text-lg font-semibold">Inventory & Setup</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="region">Region / Location</Label>
-            <Input
-              id="region"
-              value={formData.region}
-              onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-              placeholder="e.g., US, UK, Global"
-            />
-          </div>
-          <div className="space-y-2">
             <Label htmlFor="stock">Available Stock</Label>
             <Input
               id="stock"
@@ -1416,6 +1394,16 @@ export function ProductsManagement() {
               onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
               placeholder="Quantity"
             />
+          </div>
+          <div className="flex items-end pb-2">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="active"
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+              />
+              <Label htmlFor="active">Publish to Shop Immediately</Label>
+            </div>
           </div>
         </div>
         
@@ -1428,15 +1416,6 @@ export function ProductsManagement() {
             placeholder="Step-by-step setup instructions for users"
             rows={2}
           />
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <Switch
-            id="active"
-            checked={formData.isActive}
-            onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
-          />
-          <Label htmlFor="active">Publish to Shop Immediately</Label>
         </div>
       </div>
     </div>
@@ -1452,7 +1431,7 @@ export function ProductsManagement() {
       </Button>
       <Button
         onClick={handleCreateProduct}
-        disabled={actionLoading || !formData.duration || formData.price === 0}
+        disabled={actionLoading || !formData.duration || formData.price <= 0}
       >
         {actionLoading ? (
           <>
@@ -1470,13 +1449,13 @@ export function ProductsManagement() {
   </DialogContent>
 </Dialog>
 
-     {/* Edit Product Dialog */}
+{/* Edit Product Dialog */}
 <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
   <DialogContent className="max-w-2xl">
     <DialogHeader>
       <DialogTitle>Edit Product</DialogTitle>
       <DialogDescription>
-        Update product information and pricing plans
+        Update product information and pricing
       </DialogDescription>
     </DialogHeader>
     
@@ -1491,14 +1470,13 @@ export function ProductsManagement() {
               id="edit-name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Enter product name"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="edit-category">Category *</Label>
             <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value as ProductCategory })}>
               <SelectTrigger id="edit-category">
-                <SelectValue placeholder="Select category" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="vpn">VPN</SelectItem>
@@ -1512,54 +1490,35 @@ export function ProductsManagement() {
           </div>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="edit-provider">Provider *</Label>
             <Input
               id="edit-provider"
               value={formData.provider}
               onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-              placeholder="Enter provider name"
             />
           </div>
           <div className="space-y-2">
-            {/* TAGGED DURATION AND PRICE */}
-            <Label htmlFor="edit-pricingPlan">Duration & Price (USD) *</Label>
-            <Select 
-              value={`${formData.duration}|${formData.price}`}
-              onValueChange={(value) => {
-                const [duration, price] = value.split('|');
-                setFormData({ 
-                  ...formData, 
-                  duration: duration, 
-                  price: parseFloat(price) 
-                });
-              }}
-            >
-              <SelectTrigger id="edit-pricingPlan">
-                <SelectValue placeholder="Select Plan (Duration - Price)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1 month|20.00">1 Month - $20.00</SelectItem>
-                <SelectItem value="3 months|55.00">3 Months - $55.00</SelectItem>
-                <SelectItem value="6 months|100.00">6 Months - $100.00</SelectItem>
-                <SelectItem value="1 year|180.00">1 Year - $180.00</SelectItem>
-                <SelectItem value="2 years|320.00">2 Years - $320.00</SelectItem>
-                <SelectItem value="4 years|600.00">4 Years - $600.00</SelectItem>
-              </SelectContent>
-            </Select>
-            {formData.price > 0 && (
-              <div className="text-xs font-medium text-blue-600">
-                Selected: {formData.duration} @ ${formData.price.toFixed(2)} 
-                <span className="text-muted-foreground ml-1">
-                  (NGN: {formatStatsAmount(formData.price).secondary})
-                </span>
-              </div>
-            )}
+            <Label htmlFor="edit-duration">Duration *</Label>
+            <Input
+              id="edit-duration"
+              value={formData.duration}
+              onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-price">Price (USD) *</Label>
+            <Input
+              id="edit-price"
+              type="number"
+              step="0.01"
+              value={formData.price}
+              onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+            />
           </div>
         </div>
 
-        {/* Credentials Section */}
         <div className="grid grid-cols-2 gap-4 pt-2 border-t mt-4">
           <div className="space-y-2">
             <Label htmlFor="edit-username">Service Username</Label>
@@ -1567,7 +1526,6 @@ export function ProductsManagement() {
               id="edit-username"
               value={formData.username || ''}
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              placeholder="Account login"
             />
           </div>
           <div className="space-y-2">
@@ -1576,7 +1534,6 @@ export function ProductsManagement() {
               id="edit-password"
               value={formData.password || ''}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="Account password"
             />
           </div>
         </div>
@@ -1587,7 +1544,6 @@ export function ProductsManagement() {
             id="edit-description"
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            placeholder="Enter product description"
             rows={2}
           />
         </div>
@@ -1598,7 +1554,6 @@ export function ProductsManagement() {
             id="edit-imageUrl"
             value={formData.imageUrl}
             onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-            placeholder="https://example.com/image.jpg"
           />
         </div>
       </div>
@@ -1618,15 +1573,6 @@ export function ProductsManagement() {
         <h3 className="text-lg font-semibold">Inventory & Setup</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="edit-region">Region / Location</Label>
-            <Input
-              id="edit-region"
-              value={formData.region}
-              onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-              placeholder="e.g., US, UK, Global"
-            />
-          </div>
-          <div className="space-y-2">
             <Label htmlFor="edit-stock">Available Stock</Label>
             <Input
               id="edit-stock"
@@ -1634,8 +1580,17 @@ export function ProductsManagement() {
               min="0"
               value={formData.stock}
               onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
-              placeholder="Quantity"
             />
+          </div>
+          <div className="flex items-end pb-2">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="edit-active"
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+              />
+              <Label htmlFor="edit-active">Product is Active (Visible to users)</Label>
+            </div>
           </div>
         </div>
         
@@ -1645,18 +1600,8 @@ export function ProductsManagement() {
             id="edit-setupInstructions"
             value={formData.setupInstructions}
             onChange={(e) => setFormData({ ...formData, setupInstructions: e.target.value })}
-            placeholder="Step-by-step setup instructions for users"
             rows={2}
           />
-        </div>
-        
-        <div className="flex items-center space-x-2 pt-2">
-          <Switch
-            id="edit-active"
-            checked={formData.isActive}
-            onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
-          />
-          <Label htmlFor="edit-active">Product is Active (Visible to users)</Label>
         </div>
       </div>
     </div>
