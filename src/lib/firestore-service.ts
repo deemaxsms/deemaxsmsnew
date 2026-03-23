@@ -408,51 +408,53 @@ export const firestoreService = {
 
   // ===== SIMPLE PAYMENT PROCESSING =====
   async processPayment(userId: string, amountUSD: number, amountNGN: number, txRef: string, transactionId: string) {
-  const userRef = doc(db, "users", userId);
-  const userBalanceRef = doc(db, "user_balances", userId);
-  const transRef = doc(collection(db, "balance_transactions"));
+    const userRef = doc(db, "users", userId);
+    const userBalanceRef = doc(db, "user_balances", userId);
+    const transRef = doc(collection(db, "balance_transactions"));
 
-  try {
-    return await runTransaction(db, async (transaction) => {
-      const userDoc = await transaction.get(userRef);
-      if (!userDoc.exists()) throw new Error('User profile not found');
+    try {
+      return await runTransaction(db, async (transaction) => {
+        const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists()) throw new Error('User profile not found');
 
-      const currentBalance = userDoc.data().balance || 0;
-      const newBalance = currentBalance + amountUSD;
+        const currentBalance = userDoc.data().balance || 0;
+        const newBalance = currentBalance + amountUSD;
 
-      // 1. Update Primary User Doc
-      transaction.update(userRef, {
-        balance: newBalance,
-        updatedAt: serverTimestamp()
+        // 1. Update Primary User Doc
+        transaction.update(userRef, {
+          balance: newBalance,
+          updatedAt: serverTimestamp()
+        });
+
+        // 2. FIXED: Use .set with merge: true 
+        // This ensures the doc is created if missing, preventing the 404 crash
+        transaction.set(userBalanceRef, {
+          balanceUSD: newBalance,
+          totalTransactionsCount: increment(1),
+          lastTransactionAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+
+        // 3. Create Audit Log (Use CLEAN data)
+        transaction.set(transRef, cleanFirestoreData({
+          userId,
+          type: 'deposit',
+          amount: amountUSD, 
+          description: `Top up via Flutterwave - ₦${amountNGN.toLocaleString()}`,
+          balanceAfter: newBalance,
+          txRef,
+          transactionId,
+          createdAt: serverTimestamp()
+        }));
+
+        return { success: true, newBalance };
       });
-
-      // 2. Update Stats Doc (Keep them in sync!)
-      transaction.update(userBalanceRef, {
-        balanceUSD: newBalance,
-        totalTransactionsCount: increment(1),
-        lastTransactionAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-
-      // 3. Create Audit Log (Use CLEAN data)
-      transaction.set(transRef, cleanFirestoreData({
-        userId,
-        type: 'deposit',
-        amount: amountUSD, // Positive for deposits
-        description: `Top up via Flutterwave - ₦${amountNGN.toLocaleString()}`,
-        balanceAfter: newBalance,
-        txRef,
-        transactionId,
-        createdAt: serverTimestamp()
-      }));
-
-      return { success: true, newBalance };
-    });
-  } catch (err) {
-    console.error('❌ Payment Transaction Failed:', err);
-    throw err;
-  }
-},
+    } catch (err) {
+      console.error('❌ Payment Transaction Failed:', err);
+      // Re-throwing allows the UI to catch the error and handle it
+      throw err;
+    }
+  },
 
   // ===== ACTIVATIONS/ORDERS =====
   async createActivation(activation: Omit<Activation, 'id' | 'createdAt' | 'updatedAt'>) {
@@ -512,25 +514,24 @@ export const firestoreService = {
       updatedAt: serverTimestamp()
     });
 
-    // 2. Update Referrer Stats
-    transaction.update(referrerBalanceRef, {
+  transaction.set(referrerBalanceRef, {
       balanceUSD: newBalance,
       referralEarningsUSD: increment(bonusAmount),
       totalTransactionsCount: increment(1),
       updatedAt: serverTimestamp()
-    });
+    }, { merge: true });
 
     // 3. Link the new User
     transaction.update(userRef, { referredBy: referrerId });
 
-    // 4. Create Audit Log
+    // 4. Create Audit Log (Modified for safety and consistency)
     transaction.set(transRef, {
       userId: referrerId,
       type: 'referral_bonus',
       amount: bonusAmount,
-      description: 'Referral bonus',
+      description: `Referral bonus for inviting user ${userId.substring(0, 5)}...`,
       balanceAfter: newBalance,
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp() 
     });
   });
   
@@ -858,14 +859,14 @@ async addSMSMessage(orderId: string, message: Omit<SMSMessageRecord, 'id'>) {
           createdAt: serverTimestamp()
         });
 
-        // STEP 4: Update Stats (Optional but included in transaction for consistency)
-        transaction.update(userBalanceRef, {
-          balanceUSD: newBalance,
-          totalSpentUSD: increment(product.price),
-          totalTransactionsCount: increment(1),
-          lastTransactionAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
+       // STEP 4: Update Stats (FIXED: Use .set with merge to prevent 404 crash)
+  transaction.set(userBalanceRef, {
+  balanceUSD: newBalance,
+  totalSpentUSD: increment(product.price),
+  totalTransactionsCount: increment(1),
+  lastTransactionAt: serverTimestamp(),
+  updatedAt: serverTimestamp()
+}, { merge: true });
 
         return { orderId: orderRef.id, newBalance };
       });
@@ -994,12 +995,12 @@ async addSMSMessage(orderId: string, message: Omit<SMSMessageRecord, 'id'>) {
         });
 
         // Update Stats
-        transaction.update(userBalanceRef, {
-          balanceUSD: newBalance,
-          totalSpentUSD: increment(totalAmount),
-          lastTransactionAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
+       transaction.set(userBalanceRef, {
+  balanceUSD: newBalance,
+  totalSpentUSD: increment(totalAmount),
+  lastTransactionAt: serverTimestamp(),
+  updatedAt: serverTimestamp()
+}, { merge: true });
       });
 
       // 5. Trigger UI updates
