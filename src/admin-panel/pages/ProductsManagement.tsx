@@ -662,13 +662,12 @@ export function ProductsManagement() {
     setFormData({
       name: '',
       description: '',
-      price: 0,
+     pricingTiers: [{ duration: '', price: 0 }], // Start with one empty tier
       category: 'vpn' as ProductCategory,
       provider: '',
       isActive: true,
       stock: 0,
       features: [],
-      duration: '',
       region: '',
       // eSIM specific fields
       dataAllowance: '',
@@ -690,7 +689,6 @@ export function ProductsManagement() {
       rdpVersion: '',
       // VPN specific fields
       vpnProtocol: '',
-      serverLocations: [],
       deviceLimit: 0,
       logPolicy: '',
       // SMS specific fields
@@ -725,13 +723,14 @@ export function ProductsManagement() {
     setFormData({
       name: product.name || '',
       description: product.description || '',
-      price: product.price || 0,
+     pricingTiers: (product as any).pricingTiers || [
+      { duration: product.duration || '1 Month', price: product.price || 0 }
+    ],
       category: product.category || 'vpn',
       provider: product.provider || '',
       isActive: product.isActive !== false,
       stock: product.stock || 0,
       features: product.features || [],
-      duration: product.duration || '',
       region: product.region || '',
       // eSIM specific fields
       dataAllowance: (product as any).dataAllowance || '',
@@ -753,7 +752,6 @@ export function ProductsManagement() {
       rdpVersion: (product as any).rdpVersion || '',
       // VPN specific fields
       vpnProtocol: (product as any).vpnProtocol || '',
-      serverLocations: (product as any).serverLocations || [],
       deviceLimit: (product as any).deviceLimit || 0,
       logPolicy: (product as any).logPolicy || '',
       // SMS specific fields
@@ -775,58 +773,63 @@ export function ProductsManagement() {
     setEditDialogOpen(true);
   };
 
-  const handleCreateProduct = async () => {
-    try {
-      setActionLoading(true);
-      
-      if (!formData.name || !formData.category || !formData.provider || formData.price <= 0) {
-        toast.error('Please fill in all required fields');
-        return;
-      }
+ const handleCreateProduct = async () => {
+  try {
+    setActionLoading(true);
+    
+    // Updated Validation: Check if name, category, provider exist 
+    // AND if there is at least one valid pricing tier
+    const hasValidPrice = formData.pricingTiers?.length > 0 && 
+                          formData.pricingTiers.every(t => t.price > 0 && t.duration);
 
-      const productId = await adminService.createProduct(formData as any);
-      toast.success('Product created successfully');
-      
-      // Reload products to get fresh data
-      await loadProducts();
-      
-      setCreateDialogOpen(false);
-      resetForm();
-    } catch (error) {
-      console.error('Error creating product:', error);
-      toast.error('Failed to create product');
-    } finally {
-      setActionLoading(false);
+    if (!formData.name || !formData.category || !formData.provider || !hasValidPrice) {
+      toast.error('Please fill in all required fields and ensure all pricing tiers have a price and duration');
+      return;
     }
-  };
 
-  const handleUpdateProduct = async () => {
-    if (!selectedProduct) return;
+    await adminService.createProduct(formData as any);
+    toast.success('Product created successfully');
+    
+    await loadProducts();
+    setCreateDialogOpen(false);
+    resetForm();
+  } catch (error) {
+    console.error('Error creating product:', error);
+    toast.error('Failed to create product');
+  } finally {
+    setActionLoading(false);
+  }
+};
 
-    try {
-      setActionLoading(true);
-      
-      if (!formData.name || !formData.category || !formData.provider || formData.price <= 0) {
-        toast.error('Please fill in all required fields');
-        return;
-      }
+const handleUpdateProduct = async () => {
+  if (!selectedProduct) return;
 
-      await adminService.updateProduct(selectedProduct.id, formData as any);
-      toast.success('Product updated successfully');
-      
-      // Reload products to get fresh data
-      await loadProducts();
-      
-      setEditDialogOpen(false);
-      setSelectedProduct(null);
-      resetForm();
-    } catch (error) {
-      console.error('Error updating product:', error);
-      toast.error('Failed to update product');
-    } finally {
-      setActionLoading(false);
+  try {
+    setActionLoading(true);
+    
+    // Updated Validation: same logic as create
+    const hasValidPrice = formData.pricingTiers?.length > 0 && 
+                          formData.pricingTiers.every(t => t.price > 0 && t.duration);
+
+    if (!formData.name || !formData.category || !formData.provider || !hasValidPrice) {
+      toast.error('Please fill in all required fields and pricing tiers');
+      return;
     }
-  };
+
+    await adminService.updateProduct(selectedProduct.id, formData as any);
+    toast.success('Product updated successfully');
+    
+    await loadProducts();
+    setEditDialogOpen(false);
+    setSelectedProduct(null);
+    resetForm();
+  } catch (error) {
+    console.error('Error updating product:', error);
+    toast.error('Failed to update product');
+  } finally {
+    setActionLoading(false);
+  }
+};
 
   // Bulk Actions
   const handleSelectAll = (checked: boolean) => {
@@ -1182,7 +1185,7 @@ export function ProductsManagement() {
         <h3 className="text-lg font-semibold">{formData.category.toUpperCase()} Configuration</h3>
         <CategorySpecificFields 
           category={formData.category} 
-          formData={formData} 
+          formData={formData as any} 
           setFormData={setFormData} 
         />
       </div>
