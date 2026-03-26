@@ -17,44 +17,59 @@ import { Loader2, Search, Edit, Trash2, Plus, Package, DollarSign, Eye, EyeOff, 
 import { toast } from 'sonner';
 import { formatStatsAmount } from '../lib/currency-utils';
 
+export interface PriceTier {
+  duration: string; // e.g., "1 Month", "6 Months", "1 Year"
+  price: number;    // e.g., 20.00, 50.00, 100.00
+}
+
 interface ProductFormData {
   name: string;
   description: string;
-  price: number;
   category: ProductCategory;
   provider: string;
   isActive: boolean;
   stock: number;
   features: string[];
-  duration: string;
   region: string;
+  
+  // NEW: Multiple Pricing Tiers (Replaces single price and duration)
+  pricingTiers: PriceTier[]; 
+  
+  // Service Credentials
+  username?: string; 
+  password?: string; 
+
   // eSIM specific fields
   dataAllowance: string;
   validityPeriod: string;
   networkType: string;
   supportedCountries: string[];
   activationMethod: string;
+
   // Proxy specific fields
   proxyType: string;
   ipType: string;
   bandwidth: string;
   concurrentConnections: number;
   authMethod: string;
+
   // RDP specific fields
   osType: string;
   ramSize: string;
   cpuCores: number;
   storageSize: string;
   rdpVersion: string;
+
   // VPN specific fields
   vpnProtocol: string;
-  serverLocations: string[];
   deviceLimit: number;
   logPolicy: string;
+
   // SMS specific fields
   smsType: string;
   deliverySpeed: string;
   supportedNetworks: string[];
+
   // Gift specific fields
   giftWeight: number;
   giftDimensions: {
@@ -65,8 +80,9 @@ interface ProductFormData {
   sizeClass: 'small' | 'medium' | 'large';
   isFragile: boolean;
   handlingTimeDays: number;
+  
+  // Common Metadata & Assets
   tags: string[];
-  // Common fields
   imageUrl: string;
   setupInstructions: string;
   technicalSpecs: string;
@@ -477,45 +493,55 @@ export function ProductsManagement() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   
-  // Form state for create/edit
+  // Updated Form state for create/edit
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
     description: '',
-    price: 0,
     category: 'vpn' as ProductCategory,
     provider: '',
     isActive: true,
     stock: 0,
     features: [] as string[],
-    duration: '',
     region: '',
+    
+    // NEW: Pricing Tiers initialization
+    pricingTiers: [{ duration: '', price: 0 }], 
+    
+    // Service Credentials
+    username: '', 
+    password: '',
+
     // eSIM specific fields
     dataAllowance: '',
     validityPeriod: '',
     networkType: '',
     supportedCountries: [] as string[],
     activationMethod: '',
+
     // Proxy specific fields
     proxyType: '',
     ipType: '',
     bandwidth: '',
     concurrentConnections: 0,
     authMethod: '',
+
     // RDP specific fields
     osType: '',
     ramSize: '',
     cpuCores: 0,
     storageSize: '',
     rdpVersion: '',
+
     // VPN specific fields
     vpnProtocol: '',
-    serverLocations: [] as string[],
     deviceLimit: 0,
     logPolicy: '',
+
     // SMS specific fields
     smsType: '',
     deliverySpeed: '',
     supportedNetworks: [] as string[],
+
     // Gift specific fields
     giftWeight: 0,
     giftDimensions: {
@@ -526,8 +552,9 @@ export function ProductsManagement() {
     sizeClass: 'medium' as 'small' | 'medium' | 'large',
     isFragile: false,
     handlingTimeDays: 3,
-    tags: [] as string[],
+
     // Common fields
+    tags: [] as string[],
     imageUrl: '',
     setupInstructions: '',
     technicalSpecs: '',
@@ -992,289 +1019,20 @@ export function ProductsManagement() {
         </Card>
       </div>
 
-      {/* Search */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Product Search</CardTitle>
-          <CardDescription>Search products by title, provider, or category</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-            <div className="relative flex-1 w-full">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search products..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full"
-              />
-            </div>
-            <Button 
-              variant="outline" 
-              onClick={loadProducts}
-              className="w-full sm:w-auto"
-            >
-              Refresh
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Products by Category */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Products by Category</CardTitle>
-          <CardDescription>Manage products organized by type</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={activeTab} onValueChange={(value) => {
-            setActiveTab(value);
-            setSelectedProducts(new Set()); // Clear selections when changing tabs
-          }}>
-            {/* Mobile-friendly tabs */}
-            <div className="w-full overflow-x-auto">
-              <TabsList className="grid w-full grid-cols-7 min-w-[700px] lg:min-w-0">
-                <TabsTrigger value="all" className="text-xs sm:text-sm">
-                  <span className="hidden sm:inline">All Products</span>
-                  <span className="sm:hidden">All</span>
-                  <span className="ml-1">({products.length + gifts.length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="esim" className="text-xs sm:text-sm">
-                  <span className="hidden sm:inline">eSIM</span>
-                  <span className="sm:hidden">eSIM</span>
-                  <span className="ml-1">({products.filter(p => p.category === 'esim').length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="proxy" className="text-xs sm:text-sm">
-                  <span className="hidden sm:inline">Proxy</span>
-                  <span className="sm:hidden">Proxy</span>
-                  <span className="ml-1">({products.filter(p => p.category === 'proxy').length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="rdp" className="text-xs sm:text-sm">
-                  <span className="hidden sm:inline">RDP</span>
-                  <span className="sm:hidden">RDP</span>
-                  <span className="ml-1">({products.filter(p => p.category === 'rdp').length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="vpn" className="text-xs sm:text-sm">
-                  <span className="hidden sm:inline">VPN</span>
-                  <span className="sm:hidden">VPN</span>
-                  <span className="ml-1">({products.filter(p => p.category === 'vpn').length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="sms" className="text-xs sm:text-sm">
-                  <span className="hidden sm:inline">SMS</span>
-                  <span className="sm:hidden">SMS</span>
-                  <span className="ml-1">({products.filter(p => p.category === 'sms').length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="gift" className="text-xs sm:text-sm">
-                  <span className="hidden sm:inline">Gifts</span>
-                  <span className="sm:hidden">Gifts</span>
-                  <span className="ml-1">({gifts.length})</span>
-                </TabsTrigger>
-              </TabsList>
-            </div>
-            
-            <TabsContent value={activeTab} className="mt-4">
-              {/* Bulk Actions Bar */}
-              {selectedProducts.size > 0 && (
-                <div className="mb-4 p-4 bg-muted/50 rounded-lg border">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <CheckSquare className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        {selectedProducts.size} item{selectedProducts.size > 1 ? 's' : ''} selected
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleBulkActivate}
-                        disabled={bulkActionLoading}
-                        className="flex-1 sm:flex-none"
-                      >
-                        {bulkActionLoading ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        ) : (
-                          <Eye className="h-3 w-3 mr-1" />
-                        )}
-                        Activate
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleBulkDeactivate}
-                        disabled={bulkActionLoading}
-                        className="flex-1 sm:flex-none"
-                      >
-                        {bulkActionLoading ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        ) : (
-                          <EyeOff className="h-3 w-3 mr-1" />
-                        )}
-                        Deactivate
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={handleBulkDelete}
-                        disabled={bulkActionLoading}
-                        className="flex-1 sm:flex-none"
-                      >
-                        {bulkActionLoading ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        ) : (
-                          <Trash2 className="h-3 w-3 mr-1" />
-                        )}
-                        Delete
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setSelectedProducts(new Set())}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <X className="h-3 w-3 mr-1" />
-                        Clear
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedProducts.size === filteredProducts.length && filteredProducts.length > 0}
-                          onCheckedChange={handleSelectAll}
-                          aria-label="Select all products"
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[200px]">Product</TableHead>
-                      <TableHead className="hidden sm:table-cell">Provider</TableHead>
-                      <TableHead className="hidden md:table-cell">Category</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead className="hidden lg:table-cell">Status</TableHead>
-                      <TableHead className="w-20">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProducts.map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedProducts.has(product.id)}
-                            onCheckedChange={(checked) => handleSelectProduct(product.id, checked as boolean)}
-                            aria-label={`Select ${product.name}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                              {(product as any).imageUrl ? (
-                                <img 
-                                  src={(product as any).imageUrl} 
-                                  alt={product.name}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                getCategoryIcon(product.category || 'default')
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="font-medium text-sm sm:text-base truncate">{product.name}</div>
-                              <div className="text-xs sm:text-sm text-muted-foreground truncate">
-                                {product.description?.substring(0, 30)}...
-                              </div>
-                              {/* Show provider and category on mobile */}
-                              <div className="sm:hidden flex flex-wrap gap-1 mt-1">
-                                <Badge variant="outline" className="text-xs">{product.provider}</Badge>
-                                <Badge variant="secondary" className="text-xs">{product.category?.toUpperCase()}</Badge>
-                              </div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          <Badge variant="outline">{product.provider}</Badge>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <div className="flex items-center gap-2">
-                            {getCategoryIcon(product.category || 'default')}
-                            <Badge variant="secondary">{product.category?.toUpperCase()}</Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium text-sm">{formatStatsAmount(product.price || 0).primary}</div>
-                            <div className="text-xs text-muted-foreground hidden sm:block">{formatStatsAmount(product.price || 0).secondary}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell">
-                          <div className="flex items-center space-x-2">
-                            <Switch
-                              checked={product.isActive}
-                              onCheckedChange={() => handleToggleActive(product)}
-                              disabled={actionLoading}
-                            />
-                            <span className="text-sm">
-                              {product.isActive ? 'Active' : 'Inactive'}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-1">
-                            {/* Mobile: Show status toggle */}
-                            <div className="lg:hidden">
-                              <Switch
-                                checked={product.isActive}
-                                onCheckedChange={() => handleToggleActive(product)}
-                                disabled={actionLoading}
-                              />
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openEditDialog(product)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDeleteProduct(product.id)}
-                              disabled={actionLoading}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
-
    {/* Create Product Dialog */}
 <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
   <DialogContent className="max-w-2xl">
     <DialogHeader>
       <DialogTitle>Create New Product</DialogTitle>
       <DialogDescription>
-        Add a new product with custom duration and pricing
+        Add a new product with multiple duration and pricing options
       </DialogDescription>
     </DialogHeader>
     
-    <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto">
+    <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
       {/* Basic Information */}
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Basic Information</h3>
+        <h3 className="text-lg font-semibold border-b pb-2">Basic Information</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="name">Product Name *</Label>
@@ -1282,7 +1040,7 @@ export function ProductsManagement() {
               id="name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Enter product name"
+              placeholder="e.g. Premium VPN Service"
             />
           </div>
           <div className="space-y-2">
@@ -1303,57 +1061,106 @@ export function ProductsManagement() {
           </div>
         </div>
         
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="provider">Provider *</Label>
             <Input
               id="provider"
               value={formData.provider}
               onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-              placeholder="Enter provider name"
+              placeholder="e.g. NordVPN, ExpressVPN"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="duration">Duration *</Label>
+            <Label htmlFor="region">Region/Country</Label>
             <Input
-              id="duration"
-              value={formData.duration}
-              onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-              placeholder="e.g., 1 Month, 1 Year"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Price (USD) *</Label>
-            <Input
-              id="price"
-              type="number"
-              step="0.01"
-              value={formData.price}
-              onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-              placeholder="0.00"
+              id="region"
+              value={formData.region}
+              onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+              placeholder="e.g. Global, USA"
             />
           </div>
         </div>
 
+        {/* Dynamic Pricing Tiers Section */}
+        <div className="space-y-4 pt-4 border-t">
+          <div className="flex items-center justify-between">
+            <Label className="text-base font-semibold">Pricing & Durations *</Label>
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm"
+              onClick={() => setFormData({
+                ...formData, 
+                pricingTiers: [...(formData.pricingTiers || []), { duration: '', price: 0 }]
+              })}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Add Tier
+            </Button>
+          </div>
+          
+          {formData.pricingTiers?.map((tier, index) => (
+            <div key={index} className="flex gap-4 items-end animate-in fade-in slide-in-from-top-1">
+              <div className="flex-1 space-y-2">
+                <Label className="text-xs text-muted-foreground">Duration</Label>
+                <Input
+                  placeholder="e.g. 1 Month"
+                  value={tier.duration}
+                  onChange={(e) => {
+                    const newTiers = [...formData.pricingTiers];
+                    newTiers[index].duration = e.target.value;
+                    setFormData({ ...formData, pricingTiers: newTiers });
+                  }}
+                />
+              </div>
+              <div className="flex-1 space-y-2">
+                <Label className="text-xs text-muted-foreground">Price (USD)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={tier.price}
+                  onChange={(e) => {
+                    const newTiers = [...formData.pricingTiers];
+                    newTiers[index].price = parseFloat(e.target.value) || 0;
+                    setFormData({ ...formData, pricingTiers: newTiers });
+                  }}
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive h-10 w-10"
+                disabled={formData.pricingTiers.length === 1}
+                onClick={() => {
+                  const newTiers = formData.pricingTiers.filter((_, i) => i !== index);
+                  setFormData({ ...formData, pricingTiers: newTiers });
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
         {/* Credentials Section */}
-        <div className="grid grid-cols-2 gap-4 pt-2 border-t mt-4">
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t">
           <div className="space-y-2">
             <Label htmlFor="username">Service Username</Label>
             <Input
               id="username"
               value={formData.username || ''}
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              placeholder="Account login"
+              placeholder="Login ID"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Service Password</Label>
             <Input
               id="password"
-              type="text"
               value={formData.password || ''}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="Account password"
+              placeholder="Login Password"
             />
           </div>
         </div>
@@ -1364,15 +1171,15 @@ export function ProductsManagement() {
             id="description"
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            placeholder="Enter product description"
+            placeholder="Key highlights of this service"
             rows={2}
           />
         </div>
       </div>
 
       {/* Category-Specific Fields */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">{formData.category.toUpperCase()} Specific Details</h3>
+      <div className="space-y-4 border-t pt-4">
+        <h3 className="text-lg font-semibold">{formData.category.toUpperCase()} Configuration</h3>
         <CategorySpecificFields 
           category={formData.category} 
           formData={formData} 
@@ -1380,89 +1187,85 @@ export function ProductsManagement() {
         />
       </div>
 
-      {/* Common Fields */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Inventory & Setup</h3>
+      {/* Setup & Inventory */}
+      <div className="space-y-4 border-t pt-4">
+        <h3 className="text-lg font-semibold">Inventory & Visibility</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="stock">Available Stock</Label>
             <Input
               id="stock"
               type="number"
-              min="0"
               value={formData.stock}
               onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
-              placeholder="Quantity"
             />
           </div>
-          <div className="flex items-end pb-2">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="active"
-                checked={formData.isActive}
-                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
-              />
-              <Label htmlFor="active">Publish to Shop Immediately</Label>
-            </div>
+          <div className="flex items-center space-x-2 pt-8">
+            <Switch
+              id="active"
+              checked={formData.isActive}
+              onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+            />
+            <Label htmlFor="active">Live in Shop</Label>
           </div>
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="setupInstructions">Setup Instructions</Label>
+          <Label htmlFor="setupInstructions">Quick Setup Guide</Label>
           <Textarea
             id="setupInstructions"
             value={formData.setupInstructions}
             onChange={(e) => setFormData({ ...formData, setupInstructions: e.target.value })}
-            placeholder="Step-by-step setup instructions for users"
+            placeholder="Instructions sent to the user after purchase"
             rows={2}
           />
         </div>
       </div>
     </div>
 
-    <DialogFooter>
+    <DialogFooter className="border-t pt-4">
       <Button
         variant="outline"
         onClick={() => setCreateDialogOpen(false)}
         disabled={actionLoading}
       >
-        <X className="mr-2 h-4 w-4" />
-        Cancel
+        <X className="mr-2 h-4 w-4" /> Cancel
       </Button>
       <Button
         onClick={handleCreateProduct}
-        disabled={actionLoading || !formData.duration || formData.price <= 0}
+        disabled={
+          actionLoading || 
+          !formData.name || 
+          formData.pricingTiers.some(t => !t.duration || t.price <= 0)
+        }
       >
         {actionLoading ? (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Creating...
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating...
           </>
         ) : (
           <>
-            <Save className="mr-2 h-4 w-4" />
-            Create Product
+            <Save className="mr-2 h-4 w-4" /> Save Product
           </>
         )}
       </Button>
     </DialogFooter>
   </DialogContent>
 </Dialog>
-
 {/* Edit Product Dialog */}
 <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
   <DialogContent className="max-w-2xl">
     <DialogHeader>
       <DialogTitle>Edit Product</DialogTitle>
       <DialogDescription>
-        Update product information and pricing
+        Update product information, credentials, and pricing tiers
       </DialogDescription>
     </DialogHeader>
     
-    <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto">
+    <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
       {/* Basic Information */}
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Basic Information</h3>
+        <h3 className="text-lg font-semibold border-b pb-2">Basic Information</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="edit-name">Product Name *</Label>
@@ -1490,7 +1293,7 @@ export function ProductsManagement() {
           </div>
         </div>
         
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="edit-provider">Provider *</Label>
             <Input
@@ -1500,32 +1303,84 @@ export function ProductsManagement() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-duration">Duration *</Label>
+            <Label htmlFor="edit-region">Region</Label>
             <Input
-              id="edit-duration"
-              value={formData.duration}
-              onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-price">Price (USD) *</Label>
-            <Input
-              id="edit-price"
-              type="number"
-              step="0.01"
-              value={formData.price}
-              onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+              id="edit-region"
+              value={formData.region}
+              onChange={(e) => setFormData({ ...formData, region: e.target.value })}
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 pt-2 border-t mt-4">
+        {/* Dynamic Pricing Tiers Section */}
+        <div className="space-y-4 pt-4 border-t mt-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-base font-semibold">Pricing & Durations *</Label>
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm"
+              onClick={() => setFormData({
+                ...formData, 
+                pricingTiers: [...(formData.pricingTiers || []), { duration: '', price: 0 }]
+              })}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Add Tier
+            </Button>
+          </div>
+          
+          {formData.pricingTiers?.map((tier, index) => (
+            <div key={index} className="flex gap-4 items-end bg-muted/20 p-2 rounded-md">
+              <div className="flex-1 space-y-2">
+                <Label className="text-xs">Duration</Label>
+                <Input
+                  placeholder="e.g. 1 Month"
+                  value={tier.duration}
+                  onChange={(e) => {
+                    const newTiers = [...formData.pricingTiers];
+                    newTiers[index].duration = e.target.value;
+                    setFormData({ ...formData, pricingTiers: newTiers });
+                  }}
+                />
+              </div>
+              <div className="flex-1 space-y-2">
+                <Label className="text-xs">Price (USD)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={tier.price}
+                  onChange={(e) => {
+                    const newTiers = [...formData.pricingTiers];
+                    newTiers[index].price = parseFloat(e.target.value) || 0;
+                    setFormData({ ...formData, pricingTiers: newTiers });
+                  }}
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive"
+                disabled={formData.pricingTiers.length === 1}
+                onClick={() => {
+                  const newTiers = formData.pricingTiers.filter((_, i) => i !== index);
+                  setFormData({ ...formData, pricingTiers: newTiers });
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {/* Credentials Section */}
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t">
           <div className="space-y-2">
             <Label htmlFor="edit-username">Service Username</Label>
             <Input
               id="edit-username"
               value={formData.username || ''}
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              placeholder="Account Email/ID"
             />
           </div>
           <div className="space-y-2">
@@ -1534,6 +1389,7 @@ export function ProductsManagement() {
               id="edit-password"
               value={formData.password || ''}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              placeholder="Account Password"
             />
           </div>
         </div>
@@ -1560,7 +1416,7 @@ export function ProductsManagement() {
 
       {/* Category-Specific Fields */}
       <div className="space-y-4 border-t pt-4">
-        <h3 className="text-lg font-semibold">{formData.category.toUpperCase()} Specific Details</h3>
+        <h3 className="text-lg font-semibold">{formData.category.toUpperCase()} Configuration</h3>
         <CategorySpecificFields 
           category={formData.category} 
           formData={formData} 
@@ -1568,9 +1424,9 @@ export function ProductsManagement() {
         />
       </div>
 
-      {/* Common Fields */}
+      {/* Inventory & Setup */}
       <div className="space-y-4 border-t pt-4">
-        <h3 className="text-lg font-semibold">Inventory & Setup</h3>
+        <h3 className="text-lg font-semibold">Inventory & Visibility</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="edit-stock">Available Stock</Label>
@@ -1582,15 +1438,13 @@ export function ProductsManagement() {
               onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
             />
           </div>
-          <div className="flex items-end pb-2">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="edit-active"
-                checked={formData.isActive}
-                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
-              />
-              <Label htmlFor="edit-active">Product is Active (Visible to users)</Label>
-            </div>
+          <div className="flex items-center space-x-2 pt-8">
+            <Switch
+              id="edit-active"
+              checked={formData.isActive}
+              onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+            />
+            <Label htmlFor="edit-active">Product is Visible</Label>
           </div>
         </div>
         
@@ -1606,28 +1460,25 @@ export function ProductsManagement() {
       </div>
     </div>
 
-    <DialogFooter>
+    <DialogFooter className="border-t pt-4">
       <Button
         variant="outline"
         onClick={() => setEditDialogOpen(false)}
         disabled={actionLoading}
       >
-        <X className="mr-2 h-4 w-4" />
-        Cancel
+        <X className="mr-2 h-4 w-4" /> Cancel
       </Button>
       <Button
         onClick={handleUpdateProduct}
-        disabled={actionLoading}
+        disabled={actionLoading || formData.pricingTiers.some(t => !t.duration || t.price <= 0)}
       >
         {actionLoading ? (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Updating...
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Updating...
           </>
         ) : (
           <>
-            <Save className="mr-2 h-4 w-4" />
-            Update Product
+            <Save className="mr-2 h-4 w-4" /> Update Product
           </>
         )}
       </Button>
