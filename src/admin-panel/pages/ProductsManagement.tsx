@@ -345,15 +345,7 @@ function CategorySpecificFields({ category, formData, setFormData }: {
               />
             </div>
           </div>
-          
-          <div className="space-y-2">
-            <Label>Server Locations (comma-separated)</Label>
-            <Input
-              value={formData.serverLocations.join(', ')}
-              onChange={(e) => updateArrayField('serverLocations', e.target.value)}
-              placeholder="USA, UK, Germany, Japan"
-            />
-          </div>
+
           
           <div className="space-y-2">
             <Label>Log Policy</Label>
@@ -564,22 +556,42 @@ export function ProductsManagement() {
     loadProducts();
   }, []);
 
-  const loadProducts = async () => {
-    try {
-      setLoading(true);
-      const [productsData, giftsData] = await Promise.all([
-        adminService.getAllProducts(),
-        adminService.getAllGifts()
-      ]);
-      setProducts(productsData);
-      setGifts(giftsData);
-    } catch (error) {
-      console.error('Error loading products:', error);
-      toast.error('Failed to load products');
-    } finally {
-      setLoading(false);
-    }
-  };
+ const loadProducts = async () => {
+  try {
+    setLoading(true);
+    const [productsData, giftsData] = await Promise.all([
+      adminService.getAllProducts(),
+      adminService.getAllGifts()
+    ]);
+
+    // Sanitize Products: Ensure arrays exist so .join() doesn't crash
+    const sanitizedProducts = productsData.map((p: any) => ({
+      ...p,
+      features: p.features || [],
+      tags: p.tags || [],
+      pricingTiers: p.pricingTiers || [
+        { duration: p.duration || '1 Month', price: p.price || 0 }
+      ],
+      supportedCountries: p.supportedCountries || [],
+      supportedNetworks: p.supportedNetworks || [],
+    }));
+
+    // Sanitize Gifts: Apply same logic if gifts use .join()
+    const sanitizedGifts = giftsData.map((g: any) => ({
+      ...g,
+      tags: g.tags || [],
+      features: g.features || [],
+    }));
+
+    setProducts(sanitizedProducts);
+    setGifts(sanitizedGifts);
+  } catch (error) {
+    console.error('Error loading products:', error);
+    toast.error('Failed to load products');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const filteredProducts = (() => {
     if (activeTab === 'gift') {
@@ -718,60 +730,81 @@ export function ProductsManagement() {
     setCreateDialogOpen(true);
   };
 
-  const openEditDialog = (product: ProductListing) => {
-    setSelectedProduct(product);
-    setFormData({
-      name: product.name || '',
-      description: product.description || '',
-     pricingTiers: (product as any).pricingTiers || [
-      { duration: product.duration || '1 Month', price: product.price || 0 }
+ const openEditDialog = (product: ProductListing) => {
+  // We cast to any once to avoid repetition while accessing new/old fields
+  const p = product as any;
+  
+  setSelectedProduct(product);
+  
+  setFormData({
+    // Basic Info
+    name: p.name || '',
+    description: p.description || '',
+    category: p.category || 'vpn',
+    provider: p.provider || '',
+    isActive: p.isActive !== false,
+    stock: p.stock || 0,
+    region: p.region || '',
+    imageUrl: p.imageUrl || '',
+    setupInstructions: p.setupInstructions || '',
+    technicalSpecs: p.technicalSpecs || '',
+
+    // IMPORTANT: Fix for the "pricingTiers.some" crash
+    // Converts old single price/duration to the new array format if needed
+    pricingTiers: p.pricingTiers || [
+      { duration: p.duration || '1 Month', price: Number(p.price) || 0 }
     ],
-      category: product.category || 'vpn',
-      provider: product.provider || '',
-      isActive: product.isActive !== false,
-      stock: product.stock || 0,
-      features: product.features || [],
-      region: product.region || '',
-      // eSIM specific fields
-      dataAllowance: (product as any).dataAllowance || '',
-      validityPeriod: (product as any).validityPeriod || '',
-      networkType: (product as any).networkType || '',
-      supportedCountries: (product as any).supportedCountries || [],
-      activationMethod: (product as any).activationMethod || '',
-      // Proxy specific fields
-      proxyType: (product as any).proxyType || '',
-      ipType: (product as any).ipType || '',
-      bandwidth: (product as any).bandwidth || '',
-      concurrentConnections: (product as any).concurrentConnections || 0,
-      authMethod: (product as any).authMethod || '',
-      // RDP specific fields
-      osType: (product as any).osType || '',
-      ramSize: (product as any).ramSize || '',
-      cpuCores: (product as any).cpuCores || 0,
-      storageSize: (product as any).storageSize || '',
-      rdpVersion: (product as any).rdpVersion || '',
-      // VPN specific fields
-      vpnProtocol: (product as any).vpnProtocol || '',
-      deviceLimit: (product as any).deviceLimit || 0,
-      logPolicy: (product as any).logPolicy || '',
-      // SMS specific fields
-      smsType: (product as any).smsType || '',
-      deliverySpeed: (product as any).deliverySpeed || '',
-      supportedNetworks: (product as any).supportedNetworks || [],
-      // Gift specific fields
-      giftWeight: (product as any).giftWeight || 0,
-      giftDimensions: (product as any).giftDimensions || { length: 0, width: 0, height: 0 },
-      sizeClass: (product as any).sizeClass || 'medium',
-      isFragile: (product as any).isFragile || false,
-      handlingTimeDays: (product as any).handlingTimeDays || 3,
-      tags: (product as any).tags || [],
-      // Common fields
-      imageUrl: (product as any).imageUrl || '',
-      setupInstructions: (product as any).setupInstructions || '',
-      technicalSpecs: (product as any).technicalSpecs || '',
-    });
-    setEditDialogOpen(true);
-  };
+
+    // IMPORTANT: Fix for the ".join" crashes
+    // Ensuring these are ALWAYS arrays, even if null/undefined in Firebase
+    features: p.features || [],
+    tags: p.tags || [],
+
+    // Service Credentials
+    username: p.username || '',
+    password: p.password || '',
+
+    // Category Specifics (eSIM)
+    dataAllowance: p.dataAllowance || '',
+    validityPeriod: p.validityPeriod || '',
+    networkType: p.networkType || '',
+    supportedCountries: p.supportedCountries || [],
+    activationMethod: p.activationMethod || '',
+
+    // Category Specifics (Proxy)
+    proxyType: p.proxyType || '',
+    ipType: p.ipType || '',
+    bandwidth: p.bandwidth || '',
+    concurrentConnections: Number(p.concurrentConnections) || 0,
+    authMethod: p.authMethod || '',
+
+    // Category Specifics (RDP)
+    osType: p.osType || '',
+    ramSize: p.ramSize || '',
+    cpuCores: Number(p.cpuCores) || 0,
+    storageSize: p.storageSize || '',
+    rdpVersion: p.rdpVersion || '',
+
+    // Category Specifics (VPN)
+    vpnProtocol: p.vpnProtocol || '',
+    deviceLimit: Number(p.deviceLimit) || 0,
+    logPolicy: p.logPolicy || '',
+
+    // Category Specifics (SMS)
+    smsType: p.smsType || '',
+    deliverySpeed: p.deliverySpeed || '',
+    supportedNetworks: p.supportedNetworks || [],
+
+    // Category Specifics (Gift)
+    giftWeight: Number(p.giftWeight) || 0,
+    giftDimensions: p.giftDimensions || { length: 0, width: 0, height: 0 },
+    sizeClass: p.sizeClass || 'medium',
+    isFragile: !!p.isFragile,
+    handlingTimeDays: Number(p.handlingTimeDays) || 3,
+  });
+
+  setEditDialogOpen(true);
+};
 
  const handleCreateProduct = async () => {
   try {
