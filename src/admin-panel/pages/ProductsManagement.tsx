@@ -18,10 +18,9 @@ import { toast } from 'sonner';
 import { formatStatsAmount } from '../lib/currency-utils';
 
 export interface PriceTier {
-  duration: string; // e.g., "1 Month", "6 Months", "1 Year"
-  price: number;    // e.g., 20.00, 50.00, 100.00
+  duration: string;
+  price: number;
 }
-
 interface ProductFormData {
   name: string;
   description: string;
@@ -30,63 +29,63 @@ interface ProductFormData {
   isActive: boolean;
   stock: number;
   features: string[];
-  region: string;
+  region: string;  
+  pricingTiers: PriceTier[];   
   
-  // NEW: Multiple Pricing Tiers (Replaces single price and duration)
-  pricingTiers: PriceTier[]; 
-  
-  // Service Credentials
+  // ADD THE "?" TO ALL THESE CATEGORY FIELDS
   username?: string; 
   password?: string; 
-
-  // eSIM specific fields
-  dataAllowance: string;
-  validityPeriod: string;
-  networkType: string;
-  supportedCountries: string[];
-  activationMethod: string;
-
-  // Proxy specific fields
-  proxyType: string;
-  ipType: string;
-  bandwidth: string;
-  concurrentConnections: number;
-  authMethod: string;
-
-  // RDP specific fields
-  osType: string;
-  ramSize: string;
-  cpuCores: number;
-  storageSize: string;
-  rdpVersion: string;
-
-  // VPN specific fields
-  vpnProtocol: string;
-  deviceLimit: number;
-  logPolicy: string;
-
-  // SMS specific fields
-  smsType: string;
-  deliverySpeed: string;
-  supportedNetworks: string[];
-
-  // Gift specific fields
-  giftWeight: number;
-  giftDimensions: {
+  dataAllowance?: string;
+  validityPeriod?: string;
+  networkType?: string;
+  supportedCountries?: string[];
+  activationMethod?: string;
+  proxyType?: string;
+  ipType?: string;
+  bandwidth?: string;
+  concurrentConnections?: number;
+  authMethod?: string;
+  osType?: string;
+  ramSize?: string;
+  cpuCores?: number;
+  storageSize?: string;
+  rdpVersion?: string;
+  vpnProtocol?: string;
+  deviceLimit?: number;
+  logPolicy?: string;
+  smsType?: string;
+  deliverySpeed?: string;
+  supportedNetworks?: string[];
+  
+  // Gift specific
+  giftWeight?: number;
+  giftDimensions?: {
     length: number;
     width: number;
     height: number;
   };
-  sizeClass: 'small' | 'medium' | 'large';
-  isFragile: boolean;
-  handlingTimeDays: number;
+  sizeClass?: 'small' | 'medium' | 'large';
+  isFragile?: boolean;
+  handlingTimeDays?: number;
   
-  // Common Metadata & Assets
   tags: string[];
   imageUrl: string;
-  setupInstructions: string;
-  technicalSpecs: string;
+  setupInstructions?: string;
+  technicalSpecs?: string;
 }
+
+export interface AdminProductListing extends ProductFormData {
+  id: string;
+  createdAt: any; 
+  updatedAt: any;
+}
+
+// Update the helper to use the new name
+type RawProductData = Partial<AdminProductListing> & { 
+  createdAt?: any; 
+  updatedAt?: any; 
+  toDate?: () => Date 
+};
 
 // Dynamic form component for category-specific fields
 function CategorySpecificFields({ category, formData, setFormData }: {
@@ -157,11 +156,11 @@ function CategorySpecificFields({ category, formData, setFormData }: {
           
           <div className="space-y-2">
             <Label>Supported Countries (comma-separated)</Label>
-            <Input
-              value={formData.supportedCountries.join(', ')}
-              onChange={(e) => updateArrayField('supportedCountries', e.target.value)}
-              placeholder="USA, UK, Germany, France"
-            />
+           <Input
+  value={(formData.supportedCountries || []).join(', ')}
+  onChange={(e) => updateArrayField('supportedCountries', e.target.value)}
+  placeholder="USA, UK, Germany, France"
+/>
           </div>
         </div>
       );
@@ -556,45 +555,45 @@ export function ProductsManagement() {
     loadProducts();
   }, []);
 
-const loadProducts = async () => {
+    const loadProducts = async () => {
   try {
     setLoading(true);
     const [productsData, giftsData] = await Promise.all([
-      adminService.getAllProducts(),
-      adminService.getAllGifts()
+      adminService.getAllProducts() as Promise<any[]>,
+      adminService.getAllGifts() as Promise<any[]>
     ]);
 
-    // Sanitize Products: This fixes the .toDate() and .join() crashes
-    const sanitizedProducts = productsData.map((p: any) => ({
+    const sanitizedProducts = productsData.map((p): ProductListing => ({
       ...p,
-      // 1. FIX: The "h.toDate is not a function" error
-      // Checks if it's a real Firebase Timestamp, otherwise wraps it safely
+      // Date Safety
       createdAt: p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt || Date.now()),
       updatedAt: p.updatedAt?.toDate ? p.updatedAt.toDate() : new Date(p.updatedAt || Date.now()),
-
-      // 2. FIX: The "pricingTiers.some" and empty display error
-      // Migrates old single price/duration products into the new tier system
+      
+      // Pricing Tier Fallback
       pricingTiers: p.pricingTiers || [
         { duration: p.duration || '1 Month', price: Number(p.price) || 0 }
       ],
 
-      // 3. FIX: The ".join" crash
-      // Ensures arrays are never undefined so the UI table can render
+      // Array Fallbacks
       features: p.features || [],
       tags: p.tags || [],
       supportedCountries: p.supportedCountries || [],
       supportedNetworks: p.supportedNetworks || [],
       
-      // Ensure numeric fields don't cause UI flickering or NaN
+      // Basic Metadata
+      imageUrl: p.imageUrl || '',
       stock: Number(p.stock) || 0,
-    }));
+      isActive: p.isActive ?? true,
+      name: p.name || '',
+      category: p.category || 'vpn',
+    }) as ProductListing);
 
-    // Sanitize Gifts: Apply same safety logic
-    const sanitizedGifts = giftsData.map((g: any) => ({
+    const sanitizedGifts = giftsData.map((g) => ({
       ...g,
       createdAt: g.createdAt?.toDate ? g.createdAt.toDate() : new Date(g.createdAt || Date.now()),
       tags: g.tags || [],
       features: g.features || [],
+      imageUrl: g.imageUrl || '',
     }));
 
     setProducts(sanitizedProducts);
@@ -989,8 +988,11 @@ const handleUpdateProduct = async () => {
     const inactiveProducts = totalProducts - activeProducts;
     
     const allItems = [
-      ...products.map(p => ({ price: p.price || 0 })),
-      ...gifts.map(g => ({ price: g.basePrice || 0 }))
+      ...products.map(p => ({ 
+        // Use the first pricing tier's price since 'price' field is gone
+        price: (p.pricingTiers && p.pricingTiers[0]?.price) || 0 
+      })),
+      ...gifts.map(g => ({ price: (g as any).basePrice || 0 }))
     ];
     const avgPrice = allItems.reduce((sum, item) => sum + item.price, 0) / totalProducts || 0;
 
