@@ -556,7 +556,7 @@ export function ProductsManagement() {
     loadProducts();
   }, []);
 
- const loadProducts = async () => {
+const loadProducts = async () => {
   try {
     setLoading(true);
     const [productsData, giftsData] = await Promise.all([
@@ -564,21 +564,35 @@ export function ProductsManagement() {
       adminService.getAllGifts()
     ]);
 
-    // Sanitize Products: Ensure arrays exist so .join() doesn't crash
+    // Sanitize Products: This fixes the .toDate() and .join() crashes
     const sanitizedProducts = productsData.map((p: any) => ({
       ...p,
+      // 1. FIX: The "h.toDate is not a function" error
+      // Checks if it's a real Firebase Timestamp, otherwise wraps it safely
+      createdAt: p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt || Date.now()),
+      updatedAt: p.updatedAt?.toDate ? p.updatedAt.toDate() : new Date(p.updatedAt || Date.now()),
+
+      // 2. FIX: The "pricingTiers.some" and empty display error
+      // Migrates old single price/duration products into the new tier system
+      pricingTiers: p.pricingTiers || [
+        { duration: p.duration || '1 Month', price: Number(p.price) || 0 }
+      ],
+
+      // 3. FIX: The ".join" crash
+      // Ensures arrays are never undefined so the UI table can render
       features: p.features || [],
       tags: p.tags || [],
-      pricingTiers: p.pricingTiers || [
-        { duration: p.duration || '1 Month', price: p.price || 0 }
-      ],
       supportedCountries: p.supportedCountries || [],
       supportedNetworks: p.supportedNetworks || [],
+      
+      // Ensure numeric fields don't cause UI flickering or NaN
+      stock: Number(p.stock) || 0,
     }));
 
-    // Sanitize Gifts: Apply same logic if gifts use .join()
+    // Sanitize Gifts: Apply same safety logic
     const sanitizedGifts = giftsData.map((g: any) => ({
       ...g,
+      createdAt: g.createdAt?.toDate ? g.createdAt.toDate() : new Date(g.createdAt || Date.now()),
       tags: g.tags || [],
       features: g.features || [],
     }));
@@ -1055,7 +1069,7 @@ const handleUpdateProduct = async () => {
         </Card>
       </div>
 
-   {/* Create Product Dialog */}
+  {/* Create Product Dialog */}
 <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
   <DialogContent className="max-w-2xl">
     <DialogHeader>
@@ -1069,6 +1083,30 @@ const handleUpdateProduct = async () => {
       {/* Basic Information */}
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">Basic Information</h3>
+        
+        {/* NEW: Image URL Field */}
+        <div className="space-y-2">
+          <Label htmlFor="imageUrl">Product Image URL</Label>
+          <div className="flex gap-2">
+            <Input
+              id="imageUrl"
+              value={formData.imageUrl || ''}
+              onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+              placeholder="https://example.com/image.png"
+            />
+            {formData.imageUrl && (
+              <div className="h-10 w-10 rounded border bg-muted flex-shrink-0 overflow-hidden">
+                <img 
+                  src={formData.imageUrl} 
+                  alt="Preview" 
+                  className="h-full w-full object-cover"
+                  onError={(e) => (e.currentTarget.src = 'https://placehold.co/40x40?text=!')}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="name">Product Name *</Label>
@@ -1135,7 +1173,7 @@ const handleUpdateProduct = async () => {
             </Button>
           </div>
           
-          {formData.pricingTiers?.map((tier, index) => (
+          {(formData.pricingTiers || []).map((tier, index) => (
             <div key={index} className="flex gap-4 items-end animate-in fade-in slide-in-from-top-1">
               <div className="flex-1 space-y-2">
                 <Label className="text-xs text-muted-foreground">Duration</Label>
@@ -1143,7 +1181,7 @@ const handleUpdateProduct = async () => {
                   placeholder="e.g. 1 Month"
                   value={tier.duration}
                   onChange={(e) => {
-                    const newTiers = [...formData.pricingTiers];
+                    const newTiers = [...(formData.pricingTiers || [])];
                     newTiers[index].duration = e.target.value;
                     setFormData({ ...formData, pricingTiers: newTiers });
                   }}
@@ -1157,7 +1195,7 @@ const handleUpdateProduct = async () => {
                   placeholder="0.00"
                   value={tier.price}
                   onChange={(e) => {
-                    const newTiers = [...formData.pricingTiers];
+                    const newTiers = [...(formData.pricingTiers || [])];
                     newTiers[index].price = parseFloat(e.target.value) || 0;
                     setFormData({ ...formData, pricingTiers: newTiers });
                   }}
@@ -1167,7 +1205,7 @@ const handleUpdateProduct = async () => {
                 variant="ghost"
                 size="icon"
                 className="text-destructive h-10 w-10"
-                disabled={formData.pricingTiers.length === 1}
+                disabled={(formData.pricingTiers || []).length <= 1}
                 onClick={() => {
                   const newTiers = formData.pricingTiers.filter((_, i) => i !== index);
                   setFormData({ ...formData, pricingTiers: newTiers });
@@ -1272,7 +1310,7 @@ const handleUpdateProduct = async () => {
         disabled={
           actionLoading || 
           !formData.name || 
-          formData.pricingTiers.some(t => !t.duration || t.price <= 0)
+          (formData.pricingTiers || []).some(t => !t.duration || t.price <= 0)
         }
       >
         {actionLoading ? (
@@ -1302,6 +1340,30 @@ const handleUpdateProduct = async () => {
       {/* Basic Information */}
       <div className="space-y-4">
         <h3 className="text-lg font-semibold border-b pb-2">Basic Information</h3>
+        
+        {/* Image URL Field with Preview */}
+        <div className="space-y-2">
+          <Label htmlFor="edit-imageUrl">Product Image URL</Label>
+          <div className="flex gap-2">
+            <Input
+              id="edit-imageUrl"
+              value={formData.imageUrl || ''}
+              onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+              placeholder="https://example.com/image.png"
+            />
+            {formData.imageUrl && (
+              <div className="h-10 w-10 rounded border bg-muted flex-shrink-0 overflow-hidden">
+                <img 
+                  src={formData.imageUrl} 
+                  alt="Preview" 
+                  className="h-full w-full object-cover"
+                  onError={(e) => (e.currentTarget.src = 'https://placehold.co/40x40?text=!')}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="edit-name">Product Name *</Label>
@@ -1365,15 +1427,15 @@ const handleUpdateProduct = async () => {
             </Button>
           </div>
           
-          {formData.pricingTiers?.map((tier, index) => (
-            <div key={index} className="flex gap-4 items-end bg-muted/20 p-2 rounded-md">
+          {(formData.pricingTiers || []).map((tier, index) => (
+            <div key={index} className="flex gap-4 items-end bg-muted/20 p-2 rounded-md animate-in fade-in">
               <div className="flex-1 space-y-2">
                 <Label className="text-xs">Duration</Label>
                 <Input
                   placeholder="e.g. 1 Month"
                   value={tier.duration}
                   onChange={(e) => {
-                    const newTiers = [...formData.pricingTiers];
+                    const newTiers = [...(formData.pricingTiers || [])];
                     newTiers[index].duration = e.target.value;
                     setFormData({ ...formData, pricingTiers: newTiers });
                   }}
@@ -1386,7 +1448,7 @@ const handleUpdateProduct = async () => {
                   step="0.01"
                   value={tier.price}
                   onChange={(e) => {
-                    const newTiers = [...formData.pricingTiers];
+                    const newTiers = [...(formData.pricingTiers || [])];
                     newTiers[index].price = parseFloat(e.target.value) || 0;
                     setFormData({ ...formData, pricingTiers: newTiers });
                   }}
@@ -1396,7 +1458,7 @@ const handleUpdateProduct = async () => {
                 variant="ghost"
                 size="icon"
                 className="text-destructive"
-                disabled={formData.pricingTiers.length === 1}
+                disabled={(formData.pricingTiers || []).length <= 1}
                 onClick={() => {
                   const newTiers = formData.pricingTiers.filter((_, i) => i !== index);
                   setFormData({ ...formData, pricingTiers: newTiers });
@@ -1439,23 +1501,14 @@ const handleUpdateProduct = async () => {
             rows={2}
           />
         </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-imageUrl">Product Image URL</Label>
-          <Input
-            id="edit-imageUrl"
-            value={formData.imageUrl}
-            onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-          />
-        </div>
       </div>
 
       {/* Category-Specific Fields */}
       <div className="space-y-4 border-t pt-4">
-        <h3 className="text-lg font-semibold">{formData.category.toUpperCase()} Configuration</h3>
+        <h3 className="text-lg font-semibold">{formData.category?.toUpperCase()} Configuration</h3>
         <CategorySpecificFields 
           category={formData.category} 
-          formData={formData} 
+          formData={formData as any} 
           setFormData={setFormData} 
         />
       </div>
@@ -1506,7 +1559,7 @@ const handleUpdateProduct = async () => {
       </Button>
       <Button
         onClick={handleUpdateProduct}
-        disabled={actionLoading || formData.pricingTiers.some(t => !t.duration || t.price <= 0)}
+        disabled={actionLoading || (formData.pricingTiers || []).some(t => !t.duration || t.price <= 0)}
       >
         {actionLoading ? (
           <>
@@ -1521,6 +1574,7 @@ const handleUpdateProduct = async () => {
     </DialogFooter>
   </DialogContent>
 </Dialog>
+
     </div>
   );
 }
