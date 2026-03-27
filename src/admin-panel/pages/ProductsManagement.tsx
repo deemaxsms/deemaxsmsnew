@@ -21,6 +21,7 @@ export interface PriceTier {
   duration: string;
   price: number;
 }
+
 interface ProductFormData {
   name: string;
   description: string;
@@ -555,7 +556,7 @@ export function ProductsManagement() {
     loadProducts();
   }, []);
 
-    const loadProducts = async () => {
+   const loadProducts = async () => {
   try {
     setLoading(true);
     const [productsData, giftsData] = await Promise.all([
@@ -563,11 +564,19 @@ export function ProductsManagement() {
       adminService.getAllGifts() as Promise<any[]>
     ]);
 
+    // 1. Define a robust date helper to prevent the "h.toDate is not a function" error
+    const parseSafeDate = (d: any) => {
+      if (!d) return new Date();
+      // Explicitly check if it's a function
+      if (typeof d?.toDate === 'function') return d.toDate();
+      const parsed = new Date(d);
+      return isNaN(parsed.getTime()) ? new Date() : parsed;
+    };
+
     const sanitizedProducts = productsData.map((p): ProductListing => ({
       ...p,
-      // Date Safety
-      createdAt: p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt || Date.now()),
-      updatedAt: p.updatedAt?.toDate ? p.updatedAt.toDate() : new Date(p.updatedAt || Date.now()),
+      createdAt: parseSafeDate(p.createdAt),
+      updatedAt: parseSafeDate(p.updatedAt),
       
       // Pricing Tier Fallback
       pricingTiers: p.pricingTiers || [
@@ -575,24 +584,24 @@ export function ProductsManagement() {
       ],
 
       // Array Fallbacks
-      features: p.features || [],
-      tags: p.tags || [],
-      supportedCountries: p.supportedCountries || [],
-      supportedNetworks: p.supportedNetworks || [],
+      features: Array.isArray(p.features) ? p.features : [],
+      tags: Array.isArray(p.tags) ? p.tags : [],
+      supportedCountries: Array.isArray(p.supportedCountries) ? p.supportedCountries : [],
+      supportedNetworks: Array.isArray(p.supportedNetworks) ? p.supportedNetworks : [],
       
       // Basic Metadata
       imageUrl: p.imageUrl || '',
       stock: Number(p.stock) || 0,
       isActive: p.isActive ?? true,
-      name: p.name || '',
+      name: p.name || 'Untitled Product',
       category: p.category || 'vpn',
     }) as ProductListing);
 
     const sanitizedGifts = giftsData.map((g) => ({
       ...g,
-      createdAt: g.createdAt?.toDate ? g.createdAt.toDate() : new Date(g.createdAt || Date.now()),
-      tags: g.tags || [],
-      features: g.features || [],
+      createdAt: parseSafeDate(g.createdAt),
+      tags: Array.isArray(g.tags) ? g.tags : [],
+      features: Array.isArray(g.features) ? g.features : [],
       imageUrl: g.imageUrl || '',
     }));
 
@@ -606,14 +615,16 @@ export function ProductsManagement() {
   }
 };
 
-  const filteredProducts = (() => {
+ const filteredProducts = (() => {
+    const search = searchTerm.toLowerCase();
+
     if (activeTab === 'gift') {
-      // Show gifts when gift tab is active
       return gifts.filter(gift => {
-        const matchesSearch = gift.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          gift.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          gift.categoryId?.toLowerCase().includes(searchTerm.toLowerCase());
-        return matchesSearch;
+        return (
+          gift.title?.toLowerCase().includes(search) ||
+          gift.description?.toLowerCase().includes(search) ||
+          gift.categoryId?.toLowerCase().includes(search)
+        );
       }).map(gift => ({
         ...gift,
         name: gift.title,
@@ -623,14 +634,16 @@ export function ProductsManagement() {
         isActive: gift.isActive
       }));
     } else {
-      // Show regular products
       return products.filter(product => {
-        const matchesSearch = product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          product.provider?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          product.category?.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = 
+          product.name?.toLowerCase().includes(search) ||
+          product.provider?.toLowerCase().includes(search) ||
+          product.category?.toLowerCase().includes(search);
         
         if (activeTab === 'all') return matchesSearch;
-        return matchesSearch && product.category === activeTab;
+
+        // CRITICAL FIX: Ensure both are lowercase for the comparison
+        return matchesSearch && product.category?.toLowerCase() === activeTab.toLowerCase();
       });
     }
   })();
